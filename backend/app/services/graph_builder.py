@@ -25,16 +25,23 @@ from .text_processor import TextProcessor
 
 
 # ============== Monkey-patch: 修复 Neo4j 不支持 Map 属性值的问题 ==============
-# Graphiti 在 bulk_utils.add_nodes_and_edges_bulk 中会将 node.attributes 直接
-# update 到 entity_data dict，然后作为 Neo4j 节点属性写入。但 Neo4j 不允许属性
-# 值为 dict/list 类型，只能是基本类型。当 LLM 提取的属性包含嵌套结构时就会报错：
+# Graphiti 的 bulk_utils.add_nodes_and_edges_bulk_tx 内部会将 node.attributes
+# 和 edge.attributes 直接 update 到 entity_data dict，然后写入 Neo4j。
+# 但 Neo4j 不允许属性值为 dict/list[dict] 类型（只能是基本类型或基本类型数组）。
+# 当 LLM 提取的属性包含嵌套结构时就会报错：
 #   "Property values can only be of primitive types or arrays thereof"
-# 这里对 bulk_utils 进行 monkey-patch，在写入前将非基本类型属性序列化为 JSON 字符串。
+#
+# 解决方案：patch add_nodes_and_edges_bulk_tx（属性展开发生的地方），
+# 在 entity_data 构建完毕后、写入 Neo4j 前，将所有非基本类型的属性值序列化为 JSON 字符串。
 
 _patch_logger = logging.getLogger('mirofish.patch')
 
 def _flatten_neo4j_properties(data: dict) -> dict:
-    """将 dict 中的非 Neo4j 基本类型值序列化为 JSON 字符串"""
+    """将 dict 中的非 Neo4j 基本类型值序列化为 JSON 字符串。
+    
+    Neo4j 只接受: bool, int, float, str, bytes, datetime, 以及这些类型的 list。
+    dict 和 list[dict] 都需要序列化为 JSON 字符串。
+    """
     for key, value in list(data.items()):
         if isinstance(value, dict):
             data[key] = json.dumps(value, ensure_ascii=False)
@@ -44,11 +51,19 @@ def _flatten_neo4j_properties(data: dict) -> dict:
 
 try:
     from graphiti_core.utils import bulk_utils as _bulk_utils
-    _original_add_nodes_and_edges_bulk = _bulk_utils.add_nodes_and_edges_bulk
+    _original_add_nodes_and_edges_bulk_tx = _bulk_utils.add_nodes_and_edges_bulk_tx
 
-    async def _patched_add_nodes_and_edges_bulk(tx, episodic_nodes, entity_nodes, entity_edges, embedder, driver):
-        """Patched version: 对实体属性做扁平化处理，避免 Neo4j Map 类型报错"""
-        # 在写入前，遍历 entity_nodes 和 entity_edges，将嵌套 dict 属性序列化
+    async def _patched_add_nodes_and_edges_bulk_tx(
+        tx, episodic_nodes, episodic_edges, entity_nodes, entity_edges, embedder, driver
+    ):
+        """Patched version: 在写入 Neo4j 前对实体/边属性做扁平化处理。
+        
+        原函数内部会执行 entity_data.update(node.attributes or {})，
+        将 attributes 中的字段展平到 entity_data 中。如果 attributes 包含
+        嵌套 dict/list[dict]，就会产生 Neo4j Map 类型错误。
+        
+        我们在调用原函数前，预先将 attributes 中的复杂类型序列化为 JSON 字符串。
+        """
         for node in entity_nodes:
             if node.attributes:
                 node.attributes = _flatten_neo4j_properties(dict(node.attributes))
@@ -56,12 +71,12 @@ try:
             if edge.attributes:
                 edge.attributes = _flatten_neo4j_properties(dict(edge.attributes))
 
-        return await _original_add_nodes_and_edges_bulk(
-            tx, episodic_nodes, entity_nodes, entity_edges, embedder, driver
+        return await _original_add_nodes_and_edges_bulk_tx(
+            tx, episodic_nodes, episodic_edges, entity_nodes, entity_edges, embedder, driver
         )
 
-    _bulk_utils.add_nodes_and_edges_bulk = _patched_add_nodes_and_edges_bulk
-    _patch_logger.info("Successfully patched graphiti_core.utils.bulk_utils.add_nodes_and_edges_bulk")
+    _bulk_utils.add_nodes_and_edges_bulk_tx = _patched_add_nodes_and_edges_bulk_tx
+    _patch_logger.info("Successfully patched graphiti_core.utils.bulk_utils.add_nodes_and_edges_bulk_tx")
 except Exception as e:
     _patch_logger.warning(f"Failed to patch bulk_utils: {e}")
 # ============== Monkey-patch END ==============

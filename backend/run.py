@@ -44,7 +44,10 @@ def main():
     debug = Config.DEBUG
     
     # 启动服务
-    app.run(host=host, port=port, debug=debug, threaded=True)
+    # 注意：use_reloader=False 是必须的！
+    # Flask reloader 会 fork 子进程，导致 TaskManager 单例在主进程和子进程间不共享，
+    # 构建线程在进程 A 创建的 task，在进程 B 中查询不到（404）。
+    app.run(host=host, port=port, debug=debug, threaded=True, use_reloader=False)
 
 
 if __name__ == '__main__':
