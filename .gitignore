@@ -58,3 +58,8 @@ backend/uploads/
 
 # Docker 数据
 data/
+# CodeBuddy
+.codebuddy/
+
+# 个人文件
+*.txt

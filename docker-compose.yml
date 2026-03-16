@@ -1,4 +1,25 @@
 services:
+  neo4j:
+    image: neo4j:2026-community
+    container_name: mirofish-neo4j
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-your_neo4j_password}
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   mirofish:
     image: ghcr.io/666ghj/mirofish:latest
     # 加速镜像（如拉取缓慢可替换上方地址）
@@ -6,9 +27,18 @@ services:
     container_name: mirofish
     env_file:
       - .env
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
     ports:
       - "3000:3000"
       - "5001:5001"
     restart: unless-stopped
     volumes:
       - ./backend/uploads:/app/backend/uploads
+    depends_on:
+      neo4j:
+        condition: service_healthy
+
+volumes:
+  neo4j_data:
+  neo4j_logs:

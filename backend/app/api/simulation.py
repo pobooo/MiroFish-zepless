@@ -1,6 +1,6 @@
 """
 模拟相关API路由
-Step2: Zep实体读取与过滤、OASIS模拟准备与运行（全程自动化）
+Step2: 实体读取与过滤、OASIS模拟准备与运行（全程自动化）
 """
 
 import os
@@ -8,7 +8,6 @@ import traceback
 from flask import request, jsonify, send_file
 
 from . import simulation_bp
-from ..config import Config
 from ..services.zep_entity_reader import ZepEntityReader
 from ..services.oasis_profile_generator import OasisProfileGenerator
 from ..services.simulation_manager import SimulationManager, SimulationStatus
@@ -56,12 +55,6 @@ def get_graph_entities(graph_id: str):
         enrich: 是否获取相关边信息（默认true）
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": "ZEP_API_KEY未配置"
-            }), 500
-        
         entity_types_str = request.args.get('entity_types', '')
         entity_types = [t.strip() for t in entity_types_str.split(',') if t.strip()] if entity_types_str else None
         enrich = request.args.get('enrich', 'true').lower() == 'true'
@@ -93,12 +86,6 @@ def get_graph_entities(graph_id: str):
 def get_entity_detail(graph_id: str, entity_uuid: str):
     """获取单个实体的详细信息"""
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": "ZEP_API_KEY未配置"
-            }), 500
-        
         reader = ZepEntityReader()
         entity = reader.get_entity_with_context(graph_id, entity_uuid)
         
@@ -126,12 +113,6 @@ def get_entity_detail(graph_id: str, entity_uuid: str):
 def get_entities_by_type(graph_id: str, entity_type: str):
     """获取指定类型的所有实体"""
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": "ZEP_API_KEY未配置"
-            }), 500
-        
         enrich = request.args.get('enrich', 'true').lower() == 'true'
         
         reader = ZepEntityReader()
@@ -1051,6 +1032,7 @@ def get_simulation_profiles_realtime(simulation_id: str):
     import json
     import csv
     from datetime import datetime
+    from ..config import Config
     
     try:
         platform = request.args.get('platform', 'reddit')
@@ -1156,6 +1138,7 @@ def get_simulation_config_realtime(simulation_id: str):
     """
     import json
     from datetime import datetime
+    from ..config import Config
     
     try:
         # 获取模拟目录
@@ -1595,13 +1578,23 @@ def start_simulation():
             
             logger.info(f"启用图谱记忆更新: simulation_id={simulation_id}, graph_id={graph_id}")
         
+        # 获取本体定义（用于图谱记忆更新时的实体/边类型识别）
+        ontology = None
+        if enable_graph_memory_update:
+            proj = ProjectManager.get_project(state.project_id)
+            if proj and hasattr(proj, 'ontology'):
+                ontology = proj.ontology
+                if ontology:
+                    logger.info(f"已获取本体定义: entity_types={len(ontology.get('entity_types', []))}, edge_types={len(ontology.get('edge_types', []))}")
+        
         # 启动模拟
         run_state = SimulationRunner.start_simulation(
             simulation_id=simulation_id,
             platform=platform,
             max_rounds=max_rounds,
             enable_graph_memory_update=enable_graph_memory_update,
-            graph_id=graph_id
+            graph_id=graph_id,
+            ontology=ontology
         )
         
         # 更新模拟状态

@@ -1,9 +1,12 @@
 """
-Zep图谱记忆更新服务
-将模拟中的Agent活动动态更新到Zep图谱中
+图谱记忆更新服务（Graphiti 实现）
+将模拟中的Agent活动动态更新到 Graphiti 图谱（Neo4j）中
+
+注：文件名保留 zep_graph_memory_updater.py 以保持向后兼容的 import 路径，
+    内部实现已完全替换为 Graphiti API。
 """
 
-import os
+import asyncio
 import time
 import threading
 import json
@@ -12,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from queue import Queue, Empty
 
-from zep_cloud.client import Zep
+from graphiti_core.nodes import EpisodeType
 
 from ..config import Config
 from ..utils.logger import get_logger
@@ -33,9 +36,9 @@ class AgentActivity:
     
     def to_episode_text(self) -> str:
         """
-        将活动转换为可以发送给Zep的文本描述
+        将活动转换为可以发送给 Graphiti 的文本描述
         
-        采用自然语言描述格式，让Zep能够从中提取实体和关系
+        采用自然语言描述格式，让 Graphiti 能够从中提取实体和关系
         不添加模拟相关的前缀，避免误导图谱更新
         """
         # 根据不同的动作类型生成不同的描述
@@ -200,12 +203,14 @@ class AgentActivity:
 
 class ZepGraphMemoryUpdater:
     """
-    Zep图谱记忆更新器
+    图谱记忆更新器（Graphiti 实现）
     
-    监控模拟的actions日志文件，将新的agent活动实时更新到Zep图谱中。
-    按平台分组，每累积BATCH_SIZE条活动后批量发送到Zep。
+    监控模拟的actions日志文件，将新的agent活动实时更新到 Graphiti 图谱中。
+    按平台分组，每累积BATCH_SIZE条活动后批量发送到 Graphiti。
     
-    所有有意义的行为都会被更新到Zep，action_args中会包含完整的上下文信息：
+    保留类名 ZepGraphMemoryUpdater 以保持向后兼容。
+    
+    所有有意义的行为都会被更新到图谱，action_args中会包含完整的上下文信息：
     - 点赞/踩的帖子原文
     - 转发/引用的帖子原文
     - 关注/屏蔽的用户名
@@ -228,21 +233,27 @@ class ZepGraphMemoryUpdater:
     MAX_RETRIES = 3
     RETRY_DELAY = 2  # 秒
     
-    def __init__(self, graph_id: str, api_key: Optional[str] = None):
+    def __init__(self, graph_id: str, api_key: Optional[str] = None, ontology: Optional[Dict[str, Any]] = None):
         """
         初始化更新器
         
         Args:
-            graph_id: Zep图谱ID
-            api_key: Zep API Key（可选，默认从配置读取）
+            graph_id: 图谱 group_id（Graphiti 用 group_id 隔离不同图谱）
+            api_key: 保留参数以兼容旧代码，不再使用
+            ontology: 本体定义（用于 add_episode 的 entity_types/edge_types 参数）
         """
         self.graph_id = graph_id
-        self.api_key = api_key or Config.ZEP_API_KEY
+        # api_key 参数保留以兼容旧代码，不再使用
         
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY未配置")
+        # 从本体构建类型字典（用于 add_episode）
+        self._entity_types_dict = None
+        self._edge_types_dict = None
+        if ontology:
+            self._entity_types_dict, self._edge_types_dict = self._build_type_dicts(ontology)
         
-        self.client = Zep(api_key=self.api_key)
+        # Graphiti 客户端（在工作线程中延迟初始化）
+        self._graphiti = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
         
         # 活动队列
         self._activity_queue: Queue = Queue()
@@ -260,12 +271,79 @@ class ZepGraphMemoryUpdater:
         
         # 统计
         self._total_activities = 0  # 实际添加到队列的活动数
-        self._total_sent = 0        # 成功发送到Zep的批次数
-        self._total_items_sent = 0  # 成功发送到Zep的活动条数
+        self._total_sent = 0        # 成功发送的批次数
+        self._total_items_sent = 0  # 成功发送的活动条数
         self._failed_count = 0      # 发送失败的批次数
         self._skipped_count = 0     # 被过滤跳过的活动数（DO_NOTHING）
         
-        logger.info(f"ZepGraphMemoryUpdater 初始化完成: graph_id={graph_id}, batch_size={self.BATCH_SIZE}")
+        logger.info(f"ZepGraphMemoryUpdater 初始化完成（Graphiti 后端）: graph_id={graph_id}, batch_size={self.BATCH_SIZE}")
+    
+    @staticmethod
+    def _build_type_dicts(ontology: Dict[str, Any]):
+        """
+        从本体定义中构建 entity_types 和 edge_types 字典。
+        
+        Graphiti 的 add_episode 接受 Pydantic BaseModel 类型的字典。
+        """
+        from pydantic import BaseModel, Field, BeforeValidator
+        from typing import Optional as Opt, Annotated
+        
+        def _coerce_to_str(v):
+            """将 LLM 返回的非字符串值（如 bool、int）强制转为 str"""
+            if v is None:
+                return v
+            return str(v)
+        
+        # 宽容的 Optional[str] 类型：接受任意值并转为字符串
+        CoercedStr = Annotated[Opt[str], BeforeValidator(_coerce_to_str)]
+        
+        entity_types_dict = {}
+        edge_types_dict = {}
+        
+        # 构建实体类型
+        for entity_def in ontology.get("entity_types", []):
+            name = entity_def["name"]
+            description = entity_def.get("description", f"A {name} entity.")
+            
+            attrs = {}
+            annotations = {}
+            
+            for attr_def in entity_def.get("attributes", []):
+                attr_name = attr_def["name"]
+                attr_desc = attr_def.get("description", attr_name)
+                attrs[attr_name] = Field(description=attr_desc, default=None)
+                annotations[attr_name] = CoercedStr
+            
+            attrs["__annotations__"] = annotations
+            attrs["__doc__"] = description
+            
+            entity_class = type(name, (BaseModel,), attrs)
+            entity_class.__doc__ = description
+            entity_types_dict[name] = entity_class
+        
+        # 构建边类型
+        for edge_def in ontology.get("edge_types", []):
+            name = edge_def["name"]
+            description = edge_def.get("description", f"A {name} relationship.")
+            
+            attrs = {}
+            annotations = {}
+            
+            for attr_def in edge_def.get("attributes", []):
+                attr_name = attr_def["name"]
+                attr_desc = attr_def.get("description", attr_name)
+                attrs[attr_name] = Field(description=attr_desc, default=None)
+                annotations[attr_name] = CoercedStr
+            
+            attrs["__annotations__"] = annotations
+            attrs["__doc__"] = description
+            
+            class_name = ''.join(word.capitalize() for word in name.split('_'))
+            edge_class = type(class_name, (BaseModel,), attrs)
+            edge_class.__doc__ = description
+            edge_types_dict[name] = edge_class
+        
+        return entity_types_dict, edge_types_dict
     
     def _get_platform_display_name(self, platform: str) -> str:
         """获取平台的显示名称"""
@@ -330,7 +408,7 @@ class ZepGraphMemoryUpdater:
         
         self._activity_queue.put(activity)
         self._total_activities += 1
-        logger.debug(f"添加活动到Zep队列: {activity.agent_name} - {activity.action_type}")
+        logger.debug(f"添加活动到图谱队列: {activity.agent_name} - {activity.action_type}")
     
     def add_activity_from_dict(self, data: Dict[str, Any], platform: str):
         """
@@ -357,39 +435,52 @@ class ZepGraphMemoryUpdater:
         self.add_activity(activity)
     
     def _worker_loop(self):
-        """后台工作循环 - 按平台批量发送活动到Zep"""
-        while self._running or not self._activity_queue.empty():
-            try:
-                # 尝试从队列获取活动（超时1秒）
+        """后台工作循环 - 按平台批量发送活动到 Graphiti 图谱"""
+        # 在工作线程中创建自己的事件循环
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        
+        try:
+            # 延迟初始化 Graphiti 客户端
+            from graphiti.graphiti_client import get_graphiti_client
+            self._graphiti = self._loop.run_until_complete(get_graphiti_client())
+            logger.info(f"工作线程: Graphiti 客户端初始化完成")
+            
+            while self._running or not self._activity_queue.empty():
                 try:
-                    activity = self._activity_queue.get(timeout=1)
-                    
-                    # 将活动添加到对应平台的缓冲区
-                    platform = activity.platform.lower()
-                    with self._buffer_lock:
-                        if platform not in self._platform_buffers:
-                            self._platform_buffers[platform] = []
-                        self._platform_buffers[platform].append(activity)
+                    # 尝试从队列获取活动（超时1秒）
+                    try:
+                        activity = self._activity_queue.get(timeout=1)
                         
-                        # 检查该平台是否达到批量大小
-                        if len(self._platform_buffers[platform]) >= self.BATCH_SIZE:
-                            batch = self._platform_buffers[platform][:self.BATCH_SIZE]
-                            self._platform_buffers[platform] = self._platform_buffers[platform][self.BATCH_SIZE:]
-                            # 释放锁后再发送
-                            self._send_batch_activities(batch, platform)
-                            # 发送间隔，避免请求过快
-                            time.sleep(self.SEND_INTERVAL)
-                    
-                except Empty:
-                    pass
-                    
-            except Exception as e:
-                logger.error(f"工作循环异常: {e}")
-                time.sleep(1)
+                        # 将活动添加到对应平台的缓冲区
+                        platform = activity.platform.lower()
+                        with self._buffer_lock:
+                            if platform not in self._platform_buffers:
+                                self._platform_buffers[platform] = []
+                            self._platform_buffers[platform].append(activity)
+                            
+                            # 检查该平台是否达到批量大小
+                            if len(self._platform_buffers[platform]) >= self.BATCH_SIZE:
+                                batch = self._platform_buffers[platform][:self.BATCH_SIZE]
+                                self._platform_buffers[platform] = self._platform_buffers[platform][self.BATCH_SIZE:]
+                                # 释放锁后再发送
+                                self._send_batch_activities(batch, platform)
+                                # 发送间隔，避免请求过快
+                                time.sleep(self.SEND_INTERVAL)
+                        
+                    except Empty:
+                        pass
+                        
+                except Exception as e:
+                    logger.error(f"工作循环异常: {e}")
+                    time.sleep(1)
+        finally:
+            self._loop.close()
+            self._loop = None
     
     def _send_batch_activities(self, activities: List[AgentActivity], platform: str):
         """
-        批量发送活动到Zep图谱（合并为一条文本）
+        批量发送活动到 Graphiti 图谱（合并为一条文本，作为一个 episode）
         
         Args:
             activities: Agent活动列表
@@ -405,11 +496,21 @@ class ZepGraphMemoryUpdater:
         # 带重试的发送
         for attempt in range(self.MAX_RETRIES):
             try:
-                self.client.graph.add(
-                    graph_id=self.graph_id,
-                    type="text",
-                    data=combined_text
-                )
+                if self._loop and self._graphiti:
+                    self._loop.run_until_complete(
+                        self._graphiti.add_episode(
+                            name=f"sim_activity_{platform}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                            episode_body=combined_text,
+                            source_description=f"MiroFish Simulation Activity ({platform})",
+                            reference_time=datetime.now(),
+                            source=EpisodeType.text,
+                            group_id=self.graph_id,
+                            entity_types=self._entity_types_dict if self._entity_types_dict else None,
+                            edge_types=self._edge_types_dict if self._edge_types_dict else None,
+                        )
+                    )
+                else:
+                    raise RuntimeError("Graphiti 客户端或事件循环未初始化")
                 
                 self._total_sent += 1
                 self._total_items_sent += len(activities)
@@ -420,10 +521,10 @@ class ZepGraphMemoryUpdater:
                 
             except Exception as e:
                 if attempt < self.MAX_RETRIES - 1:
-                    logger.warning(f"批量发送到Zep失败 (尝试 {attempt + 1}/{self.MAX_RETRIES}): {e}")
+                    logger.warning(f"批量发送到图谱失败 (尝试 {attempt + 1}/{self.MAX_RETRIES}): {e}")
                     time.sleep(self.RETRY_DELAY * (attempt + 1))
                 else:
-                    logger.error(f"批量发送到Zep失败，已重试{self.MAX_RETRIES}次: {e}")
+                    logger.error(f"批量发送到图谱失败，已重试{self.MAX_RETRIES}次: {e}")
                     self._failed_count += 1
     
     def _flush_remaining(self):
@@ -472,22 +573,24 @@ class ZepGraphMemoryUpdater:
 
 class ZepGraphMemoryManager:
     """
-    管理多个模拟的Zep图谱记忆更新器
+    管理多个模拟的图谱记忆更新器（Graphiti 实现）
     
-    每个模拟可以有自己的更新器实例
+    保留类名 ZepGraphMemoryManager 以保持向后兼容。
+    每个模拟可以有自己的更新器实例。
     """
     
     _updaters: Dict[str, ZepGraphMemoryUpdater] = {}
     _lock = threading.Lock()
     
     @classmethod
-    def create_updater(cls, simulation_id: str, graph_id: str) -> ZepGraphMemoryUpdater:
+    def create_updater(cls, simulation_id: str, graph_id: str, ontology: Optional[Dict[str, Any]] = None) -> ZepGraphMemoryUpdater:
         """
         为模拟创建图谱记忆更新器
         
         Args:
             simulation_id: 模拟ID
-            graph_id: Zep图谱ID
+            graph_id: 图谱 group_id
+            ontology: 本体定义（用于 add_episode 的实体/边类型）
             
         Returns:
             ZepGraphMemoryUpdater实例
@@ -497,7 +600,7 @@ class ZepGraphMemoryManager:
             if simulation_id in cls._updaters:
                 cls._updaters[simulation_id].stop()
             
-            updater = ZepGraphMemoryUpdater(graph_id)
+            updater = ZepGraphMemoryUpdater(graph_id, ontology=ontology)
             updater.start()
             cls._updaters[simulation_id] = updater
             

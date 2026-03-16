@@ -283,14 +283,12 @@ def build_graph():
         logger.info("=== 开始构建图谱 ===")
         
         # 检查配置
-        errors = []
-        if not Config.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY未配置")
-        if errors:
-            logger.error(f"配置错误: {errors}")
+        config_errors = Config.validate()
+        if config_errors:
+            logger.error(f"配置错误: {config_errors}")
             return jsonify({
                 "success": False,
-                "error": "配置错误: " + "; ".join(errors)
+                "error": "配置错误: " + "; ".join(config_errors)
             }), 500
         
         # 解析请求
@@ -381,8 +379,8 @@ def build_graph():
                     message="初始化图谱构建服务..."
                 )
                 
-                # 创建图谱构建服务
-                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+                # 创建图谱构建服务（Graphiti 实现，不需要 api_key）
+                builder = GraphBuilderService()
                 
                 # 分块
                 task_manager.update_task(
@@ -397,10 +395,10 @@ def build_graph():
                 )
                 total_chunks = len(chunks)
                 
-                # 创建图谱
+                # 创建图谱（生成 group_id）
                 task_manager.update_task(
                     task_id,
-                    message="创建Zep图谱...",
+                    message="创建图谱...",
                     progress=10
                 )
                 graph_id = builder.create_graph(name=graph_name)
@@ -409,7 +407,7 @@ def build_graph():
                 project.graph_id = graph_id
                 ProjectManager.save_project(project)
                 
-                # 设置本体
+                # 设置本体（Graphiti 实现中是空操作，保持 API 兼容）
                 task_manager.update_task(
                     task_id,
                     message="设置本体定义...",
@@ -419,7 +417,7 @@ def build_graph():
                 
                 # 添加文本（progress_callback 签名是 (msg, progress_ratio)）
                 def add_progress_callback(msg, progress_ratio):
-                    progress = 15 + int(progress_ratio * 40)  # 15% - 55%
+                    progress = 15 + int(progress_ratio * 75)  # 15% - 90%
                     task_manager.update_task(
                         task_id,
                         message=msg,
@@ -436,25 +434,12 @@ def build_graph():
                     graph_id, 
                     chunks,
                     batch_size=3,
-                    progress_callback=add_progress_callback
+                    progress_callback=add_progress_callback,
+                    ontology=ontology
                 )
                 
-                # 等待Zep处理完成（查询每个episode的processed状态）
-                task_manager.update_task(
-                    task_id,
-                    message="等待Zep处理数据...",
-                    progress=55
-                )
-                
-                def wait_progress_callback(msg, progress_ratio):
-                    progress = 55 + int(progress_ratio * 35)  # 55% - 90%
-                    task_manager.update_task(
-                        task_id,
-                        message=msg,
-                        progress=progress
-                    )
-                
-                builder._wait_for_episodes(episode_uuids, wait_progress_callback)
+                # Graphiti 同步处理，无需等待 episode 状态
+                # （原 Zep 需要轮询 episode.processed 状态）
                 
                 # 获取图谱数据
                 task_manager.update_task(
@@ -554,7 +539,7 @@ def list_tasks():
     
     return jsonify({
         "success": True,
-        "data": [t.to_dict() for t in tasks],
+        "data": tasks,  # list_tasks() 已返回 dict 列表
         "count": len(tasks)
     })
 
@@ -567,13 +552,7 @@ def get_graph_data(graph_id: str):
     获取图谱数据（节点和边）
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": "ZEP_API_KEY未配置"
-            }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        builder = GraphBuilderService()
         graph_data = builder.get_graph_data(graph_id)
         
         return jsonify({
@@ -592,16 +571,10 @@ def get_graph_data(graph_id: str):
 @graph_bp.route('/delete/<graph_id>', methods=['DELETE'])
 def delete_graph(graph_id: str):
     """
-    删除Zep图谱
+    删除图谱
     """
     try:
-        if not Config.ZEP_API_KEY:
-            return jsonify({
-                "success": False,
-                "error": "ZEP_API_KEY未配置"
-            }), 500
-        
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        builder = GraphBuilderService()
         builder.delete_graph(graph_id)
         
         return jsonify({
