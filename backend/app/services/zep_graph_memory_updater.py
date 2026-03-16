@@ -434,6 +434,9 @@ class ZepGraphMemoryUpdater:
         
         self.add_activity(activity)
     
+    # 缓冲区超时刷新（秒）：即使未达到 BATCH_SIZE，超过此时间也强制发送
+    BUFFER_FLUSH_TIMEOUT = 30
+    
     def _worker_loop(self):
         """后台工作循环 - 按平台批量发送活动到 Graphiti 图谱"""
         # 在工作线程中创建自己的事件循环
@@ -441,10 +444,14 @@ class ZepGraphMemoryUpdater:
         asyncio.set_event_loop(self._loop)
         
         try:
-            # 延迟初始化 Graphiti 客户端
-            from graphiti.graphiti_client import get_graphiti_client
-            self._graphiti = self._loop.run_until_complete(get_graphiti_client())
-            logger.info(f"工作线程: Graphiti 客户端初始化完成")
+            # 创建独立的 Graphiti 客户端实例（非单例），避免跨事件循环冲突
+            # graph_builder.py 也采用相同策略：每个工作线程创建独立客户端
+            from graphiti.graphiti_client import create_graphiti_client
+            self._graphiti = self._loop.run_until_complete(create_graphiti_client())
+            logger.info(f"工作线程: Graphiti 客户端初始化完成（独立实例）")
+            
+            # 记录每个平台缓冲区的最后活动时间，用于超时刷新
+            last_activity_time: Dict[str, float] = {}
             
             while self._running or not self._activity_queue.empty():
                 try:
@@ -458,6 +465,7 @@ class ZepGraphMemoryUpdater:
                             if platform not in self._platform_buffers:
                                 self._platform_buffers[platform] = []
                             self._platform_buffers[platform].append(activity)
+                            last_activity_time[platform] = time.time()
                             
                             # 检查该平台是否达到批量大小
                             if len(self._platform_buffers[platform]) >= self.BATCH_SIZE:
@@ -470,11 +478,32 @@ class ZepGraphMemoryUpdater:
                         
                     except Empty:
                         pass
+                    
+                    # 超时刷新：检查是否有平台的缓冲区超时未发送
+                    now = time.time()
+                    with self._buffer_lock:
+                        for platform, buffer in list(self._platform_buffers.items()):
+                            if buffer and platform in last_activity_time:
+                                elapsed = now - last_activity_time[platform]
+                                if elapsed >= self.BUFFER_FLUSH_TIMEOUT:
+                                    batch = list(buffer)
+                                    self._platform_buffers[platform] = []
+                                    del last_activity_time[platform]
+                                    logger.info(f"缓冲区超时刷新: {platform} 平台 {len(batch)} 条活动（等待 {elapsed:.0f}s）")
+                                    self._send_batch_activities(batch, platform)
+                                    time.sleep(self.SEND_INTERVAL)
                         
                 except Exception as e:
                     logger.error(f"工作循环异常: {e}")
                     time.sleep(1)
         finally:
+            # 关闭独立客户端
+            if self._graphiti:
+                try:
+                    self._loop.run_until_complete(self._graphiti.close())
+                    logger.info("工作线程: Graphiti 客户端已关闭")
+                except Exception as e:
+                    logger.warning(f"关闭 Graphiti 客户端失败: {e}")
             self._loop.close()
             self._loop = None
     
