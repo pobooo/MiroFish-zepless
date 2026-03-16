@@ -30,6 +30,93 @@ logger = logging.getLogger(__name__)
 # 全局单例
 _client: Optional[Graphiti] = None
 
+# 支持 Responses API 的 API 端点关键字
+# 如果 LLM_BASE_URL 包含以下关键字，使用原生 OpenAIClient (responses.parse)
+# 其他端点统一使用 CompatOpenAIClient (chat.completions + json_schema 硬约束)
+_RESPONSES_API_HOSTS = [
+    "api.openai.com",
+    "azure.openai.com",      # Azure OpenAI 也支持
+]
+
+
+def _use_responses_api(base_url: str) -> bool:
+    """
+    判断给定的 API 端点是否支持 OpenAI Responses API (/v1/responses)。
+    
+    - 支持 Responses API → 使用 OpenAIClient (responses.parse)
+    - 不支持 → 使用 CompatOpenAIClient (chat.completions + json_schema 硬约束)
+    
+    两者都是 constrained decoding，100% 格式正确，区别只在 API 端点。
+    
+    也可以通过环境变量 LLM_USE_STRUCTURED_OUTPUT=true 强制使用 Responses API。
+    """
+    # 环境变量强制覆盖
+    force_structured = os.getenv("LLM_USE_STRUCTURED_OUTPUT", "").lower()
+    if force_structured == "true":
+        return True
+    if force_structured == "false":
+        return False
+    
+    # 根据 URL 自动判断
+    base_url_lower = base_url.lower()
+    return any(host in base_url_lower for host in _RESPONSES_API_HOSTS)
+
+
+def _create_llm_client(llm_config: LLMConfig):
+    """
+    根据 API 端点自动选择合适的 LLM 客户端。
+    
+    两种方案都使用 constrained decoding（硬约束），格式 100% 正确：
+    - OpenAI 原生 API → OpenAIClient（Responses API: responses.parse）
+    - 第三方代理（one-api 等） → CompatOpenAIClient（Chat Completions API + json_schema）
+    """
+    base_url = llm_config.base_url or ""
+    
+    if _use_responses_api(base_url):
+        from graphiti_core.llm_client import OpenAIClient
+        client = OpenAIClient(config=llm_config)
+        logger.info(
+            f"LLM 客户端: OpenAIClient (Responses API 硬约束), "
+            f"base_url={base_url}, model={llm_config.model}"
+        )
+    else:
+        client = CompatOpenAIClient(config=llm_config)
+        logger.info(
+            f"LLM 客户端: CompatOpenAIClient (json_schema 硬约束), "
+            f"base_url={base_url}, model={llm_config.model}"
+        )
+    
+    return client
+
+
+def _get_neo4j_config() -> tuple[str, str, str]:
+    """读取 Neo4j 配置，返回 (uri, user, password)。"""
+    neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+    neo4j_user = os.getenv("NEO4J_USER", "neo4j")
+    neo4j_password = os.getenv("NEO4J_PASSWORD", "")
+
+    if not neo4j_password:
+        raise ValueError("NEO4J_PASSWORD 环境变量未设置")
+    
+    return neo4j_uri, neo4j_user, neo4j_password
+
+
+def _get_llm_config() -> LLMConfig:
+    """读取 LLM 配置并返回 LLMConfig。"""
+    llm_api_key = os.getenv("LLM_API_KEY", "")
+    llm_base_url = os.getenv("LLM_BASE_URL", "")
+    llm_model = os.getenv("LLM_MODEL_NAME", "glm4.5-cdp")
+
+    if not llm_api_key:
+        raise ValueError("LLM_API_KEY 环境变量未设置")
+
+    return LLMConfig(
+        api_key=llm_api_key,
+        base_url=llm_base_url,
+        model=llm_model,
+        small_model=llm_model,
+    )
+
 
 async def get_graphiti_client() -> Graphiti:
     """
@@ -43,6 +130,7 @@ async def get_graphiti_client() -> Graphiti:
         - LLM_API_KEY (required)
         - LLM_BASE_URL (required)
         - LLM_MODEL_NAME (default: glm4.5-cdp)
+        - LLM_USE_STRUCTURED_OUTPUT (optional: true/false, 强制指定是否使用 Structured Output)
         - EMBEDDING_MODEL (default: all-MiniLM-L6-v2)
     """
     global _client
@@ -50,32 +138,10 @@ async def get_graphiti_client() -> Graphiti:
     if _client is not None:
         return _client
 
-    # Neo4j 配置
-    neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-    neo4j_user = os.getenv("NEO4J_USER", "neo4j")
-    neo4j_password = os.getenv("NEO4J_PASSWORD", "")
+    neo4j_uri, neo4j_user, neo4j_password = _get_neo4j_config()
+    llm_config = _get_llm_config()
+    llm_client = _create_llm_client(llm_config)
 
-    if not neo4j_password:
-        raise ValueError("NEO4J_PASSWORD 环境变量未设置")
-
-    # LLM 配置
-    llm_api_key = os.getenv("LLM_API_KEY", "")
-    llm_base_url = os.getenv("LLM_BASE_URL", "")
-    llm_model = os.getenv("LLM_MODEL_NAME", "glm4.5-cdp")
-
-    if not llm_api_key:
-        raise ValueError("LLM_API_KEY 环境变量未设置")
-
-    llm_config = LLMConfig(
-        api_key=llm_api_key,
-        base_url=llm_base_url,
-        model=llm_model,
-        small_model=llm_model,
-    )
-    llm_client = CompatOpenAIClient(config=llm_config)
-    logger.info(f"LLM 客户端类型: {type(llm_client).__name__}, MRO: {[c.__name__ for c in type(llm_client).__mro__]}")
-
-    # 本地 Embedder 和 CrossEncoder
     embedder = LocalEmbedder()
     cross_encoder = LocalCrossEncoder()
 
@@ -105,30 +171,9 @@ async def create_graphiti_client() -> Graphiti:
     避免与主事件循环的单例冲突。
     调用方负责在使用完毕后调用 client.close()。
     """
-    # Neo4j 配置
-    neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-    neo4j_user = os.getenv("NEO4J_USER", "neo4j")
-    neo4j_password = os.getenv("NEO4J_PASSWORD", "")
-
-    if not neo4j_password:
-        raise ValueError("NEO4J_PASSWORD 环境变量未设置")
-
-    # LLM 配置
-    llm_api_key = os.getenv("LLM_API_KEY", "")
-    llm_base_url = os.getenv("LLM_BASE_URL", "")
-    llm_model = os.getenv("LLM_MODEL_NAME", "glm4.5-cdp")
-
-    if not llm_api_key:
-        raise ValueError("LLM_API_KEY 环境变量未设置")
-
-    llm_config = LLMConfig(
-        api_key=llm_api_key,
-        base_url=llm_base_url,
-        model=llm_model,
-        small_model=llm_model,
-    )
-    llm_client = CompatOpenAIClient(config=llm_config)
-    logger.info(f"[create] LLM 客户端类型: {type(llm_client).__name__}, has _create_structured_completion: {hasattr(llm_client, '_create_structured_completion')}")
+    neo4j_uri, neo4j_user, neo4j_password = _get_neo4j_config()
+    llm_config = _get_llm_config()
+    llm_client = _create_llm_client(llm_config)
 
     embedder = LocalEmbedder()
     cross_encoder = LocalCrossEncoder()
@@ -157,29 +202,9 @@ async def create_graphiti_client_lite() -> Graphiti:
     用于只读操作（如读取节点、边），避免每次创建时重建索引的开销。
     索引在服务启动时已由 get_graphiti_client() 或 create_graphiti_client() 创建。
     """
-    # Neo4j 配置
-    neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-    neo4j_user = os.getenv("NEO4J_USER", "neo4j")
-    neo4j_password = os.getenv("NEO4J_PASSWORD", "")
-
-    if not neo4j_password:
-        raise ValueError("NEO4J_PASSWORD 环境变量未设置")
-
-    # LLM 配置
-    llm_api_key = os.getenv("LLM_API_KEY", "")
-    llm_base_url = os.getenv("LLM_BASE_URL", "")
-    llm_model = os.getenv("LLM_MODEL_NAME", "glm4.5-cdp")
-
-    if not llm_api_key:
-        raise ValueError("LLM_API_KEY 环境变量未设置")
-
-    llm_config = LLMConfig(
-        api_key=llm_api_key,
-        base_url=llm_base_url,
-        model=llm_model,
-        small_model=llm_model,
-    )
-    llm_client = CompatOpenAIClient(config=llm_config)
+    neo4j_uri, neo4j_user, neo4j_password = _get_neo4j_config()
+    llm_config = _get_llm_config()
+    llm_client = _create_llm_client(llm_config)
 
     embedder = LocalEmbedder()
     cross_encoder = LocalCrossEncoder()
