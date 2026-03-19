@@ -369,20 +369,12 @@ class SimulationRunner:
         
         cls._save_run_state(state)
         
-        # 如果启用图谱记忆更新，创建更新器
-        if enable_graph_memory_update:
-            if not graph_id:
-                raise ValueError("启用图谱记忆更新时必须提供 graph_id")
-            
-            try:
-                ZepGraphMemoryManager.create_updater(simulation_id, graph_id, ontology=ontology)
-                cls._graph_memory_enabled[simulation_id] = True
-                logger.info(f"已启用图谱记忆更新: simulation_id={simulation_id}, graph_id={graph_id}")
-            except Exception as e:
-                logger.error(f"创建图谱记忆更新器失败: {e}")
-                cls._graph_memory_enabled[simulation_id] = False
-        else:
-            cls._graph_memory_enabled[simulation_id] = False
+        # 注意: 图谱记忆更新器的创建移到子进程启动之后（异步初始化），
+        # 避免 ZepGraphMemoryManager.create_updater 卡住时阻塞整个启动流程
+        cls._graph_memory_enabled[simulation_id] = False
+        _deferred_graph_memory_update = enable_graph_memory_update
+        _deferred_graph_id = graph_id
+        _deferred_ontology = ontology
         
         # 确定运行哪个脚本（脚本位于 backend/scripts/ 目录）
         if platform == "twitter":
@@ -427,6 +419,17 @@ class SimulationRunner:
             main_log_path = os.path.join(sim_dir, "simulation.log")
             main_log_file = open(main_log_path, 'w', encoding='utf-8')
             
+            # 清理旧的 actions.jsonl 文件（非 resume 模式）
+            # actions.jsonl 使用 append 模式写入，如果不清理会残留旧数据
+            for platform_dir in ["twitter", "reddit"]:
+                actions_path = os.path.join(sim_dir, platform_dir, "actions.jsonl")
+                if os.path.exists(actions_path):
+                    try:
+                        os.remove(actions_path)
+                        logger.debug(f"已清理旧的 {platform_dir}/actions.jsonl")
+                    except Exception as e:
+                        logger.warning(f"清理 {actions_path} 失败: {e}")
+            
             # 设置子进程环境变量，确保 Windows 上使用 UTF-8 编码
             # 这可以修复第三方库（如 OASIS）读取文件时未指定编码的问题
             env = os.environ.copy()
@@ -466,6 +469,30 @@ class SimulationRunner:
             cls._monitor_threads[simulation_id] = monitor_thread
             
             logger.info(f"模拟启动成功: {simulation_id}, pid={process.pid}, platform={platform}")
+            
+            # 延迟初始化图谱记忆更新器（子进程已启动，不会阻塞模拟）
+            if _deferred_graph_memory_update:
+                if not _deferred_graph_id:
+                    logger.warning("启用图谱记忆更新但未提供 graph_id，跳过")
+                else:
+                    def _init_graph_memory():
+                        try:
+                            ZepGraphMemoryManager.create_updater(
+                                simulation_id, _deferred_graph_id, ontology=_deferred_ontology
+                            )
+                            cls._graph_memory_enabled[simulation_id] = True
+                            logger.info(f"已启用图谱记忆更新: simulation_id={simulation_id}, graph_id={_deferred_graph_id}")
+                        except Exception as e:
+                            logger.error(f"创建图谱记忆更新器失败（不影响模拟运行）: {e}")
+                            cls._graph_memory_enabled[simulation_id] = False
+                    
+                    # 在后台线程中初始化，设置超时避免永久阻塞
+                    graph_init_thread = threading.Thread(
+                        target=_init_graph_memory,
+                        daemon=True,
+                        name=f"graph_memory_init_{simulation_id}"
+                    )
+                    graph_init_thread.start()
             
         except Exception as e:
             state.runner_status = RunnerStatus.FAILED

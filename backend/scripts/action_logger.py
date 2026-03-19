@@ -147,7 +147,8 @@ class SimulationLogManager:
         self._main_logger.handlers.clear()
         
         # 文件处理器
-        file_handler = logging.FileHandler(log_path, encoding='utf-8', mode='w')
+        # 使用 mode='a' 追加模式，避免覆盖 simulation_runner 通过 stdout 重定向写入的内容
+        file_handler = logging.FileHandler(log_path, encoding='utf-8', mode='a')
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(logging.Formatter(
             '%(asctime)s - %(levelname)s - %(message)s',

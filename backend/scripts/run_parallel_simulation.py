@@ -70,6 +70,7 @@ import json
 import logging
 import multiprocessing
 import random
+import shutil
 import signal
 import sqlite3
 import warnings
@@ -528,7 +529,7 @@ class ParallelIPCHandler:
             return result
         
         try:
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(db_path, timeout=30)
             cursor = conn.cursor()
             
             # 查询最新的Interview记录
@@ -679,7 +680,7 @@ def fetch_new_actions_from_db(
         return actions, new_last_rowid
     
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         cursor = conn.cursor()
         
         # 使用 rowid 来追踪已处理的记录（rowid 是 SQLite 的内置自增字段）
@@ -1103,7 +1104,9 @@ async def run_twitter_simulation(
     simulation_dir: str,
     action_logger: Optional[PlatformActionLogger] = None,
     main_logger: Optional[SimulationLogManager] = None,
-    max_rounds: Optional[int] = None
+    max_rounds: Optional[int] = None,
+    resume: bool = False,
+    start_round: int = 0
 ) -> PlatformSimulation:
     """运行Twitter模拟
     
@@ -1113,6 +1116,8 @@ async def run_twitter_simulation(
         action_logger: 动作日志记录器
         main_logger: 主日志管理器
         max_rounds: 最大模拟轮数（可选，用于截断过长的模拟）
+        resume: 断点续跑模式，不删除已有数据库
+        start_round: 从第 N 轮开始模拟（跳过前 N 轮）
         
     Returns:
         PlatformSimulation: 包含env和agent_graph的结果对象
@@ -1149,14 +1154,63 @@ async def run_twitter_simulation(
             agent_names[agent_id] = getattr(agent, 'name', f'Agent_{agent_id}')
     
     db_path = os.path.join(simulation_dir, "twitter_simulation.db")
-    if os.path.exists(db_path):
-        os.remove(db_path)
+    
+    total_actions = 0
+    last_rowid = 0  # 跟踪数据库中最后处理的行号（使用 rowid 避免 created_at 格式差异）
+    
+    if resume and os.path.exists(db_path):
+        # === Resume 模式核心修复 ===
+        # OASIS 框架不支持 resume：create_db() 用的是 CREATE TABLE（不是 IF NOT EXISTS），
+        # 对已有数据库会触发 "table user already exists"；env.reset() 中的 sign_up 也会
+        # 导致 PRIMARY KEY 冲突。这些错误会使 SQLite 连接进入异常状态，
+        # 后续 env.step() 写入时报 "attempt to write a readonly database"。
+        #
+        # 解决方案：备份旧数据库（保护已有数据），让 OASIS 创建全新数据库，
+        # 从备份中读取 last_rowid 用于断点续跑的 action 追踪。
+        backup_path = db_path + ".backup"
+        try:
+            shutil.copy2(db_path, backup_path)
+            log_info(f"断点续跑: 已备份旧数据库 -> {os.path.basename(backup_path)}")
+        except Exception as e:
+            log_info(f"断点续跑: 备份数据库失败: {e}")
+        
+        # 从备份数据库读取已有数据的 total_actions（用于累计计数）
+        # 注意：last_rowid 保持为 0，因为新数据库的 rowid 从 1 开始
+        try:
+            conn = sqlite3.connect(backup_path, timeout=10)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM trace")
+            existing_count = cursor.fetchone()[0]
+            total_actions = existing_count
+            log_info(f"断点续跑: 旧数据库已有 {existing_count} 条动作记录（新库 rowid 将从 1 开始）")
+            conn.close()
+        except Exception as e:
+            log_info(f"断点续跑: 读取已有数据库失败: {e}")
+        
+        # 删除旧数据库文件（包括 WAL/SHM 残留），让 OASIS 从零创建
+        for suffix in ["", "-wal", "-shm", "-journal"]:
+            f = db_path + suffix
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
+        log_info("断点续跑: 已清理旧数据库，OASIS 将创建全新数据库")
+    elif not resume and os.path.exists(db_path):
+        # 非 resume 模式：删除旧数据库
+        for suffix in ["", "-wal", "-shm", "-journal", ".backup"]:
+            f = db_path + suffix
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
     
     result.env = oasis.make(
         agent_graph=result.agent_graph,
         platform=oasis.DefaultPlatformType.TWITTER,
         database_path=db_path,
-        semaphore=30,  # 限制最大并发 LLM 请求数，防止 API 过载
+        semaphore=10,  # 限制最大并发 LLM 请求数，防止 API 过载
     )
     
     await result.env.reset()
@@ -1165,50 +1219,50 @@ async def run_twitter_simulation(
     if action_logger:
         action_logger.log_simulation_start(config)
     
-    total_actions = 0
-    last_rowid = 0  # 跟踪数据库中最后处理的行号（使用 rowid 避免 created_at 格式差异）
-    
-    # 执行初始事件
+    # 执行初始事件（断点续跑时跳过）
     event_config = config.get("event_config", {})
     initial_posts = event_config.get("initial_posts", [])
     
-    # 记录 round 0 开始（初始事件阶段）
-    if action_logger:
-        action_logger.log_round_start(0, 0)  # round 0, simulated_hour 0
-    
     initial_action_count = 0
-    if initial_posts:
-        initial_actions = {}
-        for post in initial_posts:
-            agent_id = post.get("poster_agent_id", 0)
-            content = post.get("content", "")
-            try:
-                agent = result.env.agent_graph.get_agent(agent_id)
-                initial_actions[agent] = ManualAction(
-                    action_type=ActionType.CREATE_POST,
-                    action_args={"content": content}
-                )
-                
-                if action_logger:
-                    action_logger.log_action(
-                        round_num=0,
-                        agent_id=agent_id,
-                        agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
-                        action_type="CREATE_POST",
+    if not resume:
+        # 记录 round 0 开始（初始事件阶段）
+        if action_logger:
+            action_logger.log_round_start(0, 0)  # round 0, simulated_hour 0
+        
+        if initial_posts:
+            initial_actions = {}
+            for post in initial_posts:
+                agent_id = post.get("poster_agent_id", 0)
+                content = post.get("content", "")
+                try:
+                    agent = result.env.agent_graph.get_agent(agent_id)
+                    initial_actions[agent] = ManualAction(
+                        action_type=ActionType.CREATE_POST,
                         action_args={"content": content}
                     )
-                    total_actions += 1
-                    initial_action_count += 1
-            except Exception:
-                pass
+                    
+                    if action_logger:
+                        action_logger.log_action(
+                            round_num=0,
+                            agent_id=agent_id,
+                            agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
+                            action_type="CREATE_POST",
+                            action_args={"content": content}
+                        )
+                        total_actions += 1
+                        initial_action_count += 1
+                except Exception:
+                    pass
+            
+            if initial_actions:
+                await result.env.step(initial_actions)
+                log_info(f"已发布 {len(initial_actions)} 条初始帖子")
         
-        if initial_actions:
-            await result.env.step(initial_actions)
-            log_info(f"已发布 {len(initial_actions)} 条初始帖子")
-    
-    # 记录 round 0 结束
-    if action_logger:
-        action_logger.log_round_end(0, initial_action_count)
+        # 记录 round 0 结束
+        if action_logger:
+            action_logger.log_round_end(0, initial_action_count)
+    else:
+        log_info(f"断点续跑模式: 跳过初始事件，从第 {start_round + 1} 轮开始")
     
     # 主模拟循环
     time_config = config.get("time_config", {})
@@ -1225,7 +1279,7 @@ async def run_twitter_simulation(
     
     start_time = datetime.now()
     
-    for round_num in range(total_rounds):
+    for round_num in range(start_round, total_rounds):
         # 检查是否收到退出信号
         if _shutdown_event and _shutdown_event.is_set():
             if main_logger:
@@ -1251,9 +1305,17 @@ async def run_twitter_simulation(
             continue
         
         actions = {agent: LLMAction() for _, agent in active_agents}
-        await result.env.step(actions)
+        try:
+            await result.env.step(actions)
+        except Exception as e:
+            error_msg = str(e)
+            # 上下文溢出等错误不应终止整个模拟，跳过本轮继续
+            if "context length" in error_msg or "is longer than" in error_msg or "token" in error_msg.lower():
+                log_info(f"Round {round_num + 1} 部分Agent上下文溢出，跳过本轮继续: {error_msg[:120]}")
+            else:
+                log_info(f"Round {round_num + 1} env.step 异常，跳过本轮继续: {error_msg[:200]}")
         
-        # 从数据库获取实际执行的动作并记录
+        # 从数据库获取实际执行的动作并记录（即使 step 出错，部分 agent 可能已成功写入数据库）
         actual_actions, last_rowid = fetch_new_actions_from_db(
             db_path, last_rowid, agent_names
         )
@@ -1295,7 +1357,9 @@ async def run_reddit_simulation(
     simulation_dir: str,
     action_logger: Optional[PlatformActionLogger] = None,
     main_logger: Optional[SimulationLogManager] = None,
-    max_rounds: Optional[int] = None
+    max_rounds: Optional[int] = None,
+    resume: bool = False,
+    start_round: int = 0
 ) -> PlatformSimulation:
     """运行Reddit模拟
     
@@ -1305,6 +1369,8 @@ async def run_reddit_simulation(
         action_logger: 动作日志记录器
         main_logger: 主日志管理器
         max_rounds: 最大模拟轮数（可选，用于截断过长的模拟）
+        resume: 断点续跑模式，不删除已有数据库
+        start_round: 从第 N 轮开始模拟（跳过前 N 轮）
         
     Returns:
         PlatformSimulation: 包含env和agent_graph的结果对象
@@ -1340,14 +1406,59 @@ async def run_reddit_simulation(
             agent_names[agent_id] = getattr(agent, 'name', f'Agent_{agent_id}')
     
     db_path = os.path.join(simulation_dir, "reddit_simulation.db")
-    if os.path.exists(db_path):
-        os.remove(db_path)
+    
+    total_actions = 0
+    last_rowid = 0  # 跟踪数据库中最后处理的行号（使用 rowid 避免 created_at 格式差异）
+    
+    if resume and os.path.exists(db_path):
+        # === Resume 模式核心修复（同 Twitter 部分） ===
+        # OASIS 框架的 create_db() 用 CREATE TABLE（不是 IF NOT EXISTS），
+        # 对已有数据库会冲突，导致后续 env.step() 报 "attempt to write a readonly database"。
+        # 解决方案：备份旧数据库 -> 读取 last_rowid -> 删除旧库让 OASIS 从零创建。
+        backup_path = db_path + ".backup"
+        try:
+            shutil.copy2(db_path, backup_path)
+            log_info(f"断点续跑: 已备份旧数据库 -> {os.path.basename(backup_path)}")
+        except Exception as e:
+            log_info(f"断点续跑: 备份数据库失败: {e}")
+        
+        # 从备份数据库读取已有数据的 total_actions（用于累计计数）
+        # 注意：last_rowid 保持为 0，因为新数据库的 rowid 从 1 开始
+        try:
+            conn = sqlite3.connect(backup_path, timeout=10)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM trace")
+            existing_count = cursor.fetchone()[0]
+            total_actions = existing_count
+            log_info(f"断点续跑: 旧数据库已有 {existing_count} 条动作记录（新库 rowid 将从 1 开始）")
+            conn.close()
+        except Exception as e:
+            log_info(f"断点续跑: 读取已有数据库失败: {e}")
+        
+        # 删除旧数据库文件（包括 WAL/SHM 残留），让 OASIS 从零创建
+        for suffix in ["", "-wal", "-shm", "-journal"]:
+            f = db_path + suffix
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
+        log_info("断点续跑: 已清理旧数据库，OASIS 将创建全新数据库")
+    elif not resume and os.path.exists(db_path):
+        # 非 resume 模式：删除旧数据库
+        for suffix in ["", "-wal", "-shm", "-journal", ".backup"]:
+            f = db_path + suffix
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
     
     result.env = oasis.make(
         agent_graph=result.agent_graph,
         platform=oasis.DefaultPlatformType.REDDIT,
         database_path=db_path,
-        semaphore=30,  # 限制最大并发 LLM 请求数，防止 API 过载
+        semaphore=10,  # 限制最大并发 LLM 请求数，防止 API 过载
     )
     
     await result.env.reset()
@@ -1356,58 +1467,58 @@ async def run_reddit_simulation(
     if action_logger:
         action_logger.log_simulation_start(config)
     
-    total_actions = 0
-    last_rowid = 0  # 跟踪数据库中最后处理的行号（使用 rowid 避免 created_at 格式差异）
-    
-    # 执行初始事件
+    # 执行初始事件（断点续跑时跳过）
     event_config = config.get("event_config", {})
     initial_posts = event_config.get("initial_posts", [])
     
-    # 记录 round 0 开始（初始事件阶段）
-    if action_logger:
-        action_logger.log_round_start(0, 0)  # round 0, simulated_hour 0
-    
     initial_action_count = 0
-    if initial_posts:
-        initial_actions = {}
-        for post in initial_posts:
-            agent_id = post.get("poster_agent_id", 0)
-            content = post.get("content", "")
-            try:
-                agent = result.env.agent_graph.get_agent(agent_id)
-                if agent in initial_actions:
-                    if not isinstance(initial_actions[agent], list):
-                        initial_actions[agent] = [initial_actions[agent]]
-                    initial_actions[agent].append(ManualAction(
-                        action_type=ActionType.CREATE_POST,
-                        action_args={"content": content}
-                    ))
-                else:
-                    initial_actions[agent] = ManualAction(
-                        action_type=ActionType.CREATE_POST,
-                        action_args={"content": content}
-                    )
-                
-                if action_logger:
-                    action_logger.log_action(
-                        round_num=0,
-                        agent_id=agent_id,
-                        agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
-                        action_type="CREATE_POST",
-                        action_args={"content": content}
-                    )
-                    total_actions += 1
-                    initial_action_count += 1
-            except Exception:
-                pass
+    if not resume:
+        # 记录 round 0 开始（初始事件阶段）
+        if action_logger:
+            action_logger.log_round_start(0, 0)  # round 0, simulated_hour 0
         
-        if initial_actions:
-            await result.env.step(initial_actions)
-            log_info(f"已发布 {len(initial_actions)} 条初始帖子")
-    
-    # 记录 round 0 结束
-    if action_logger:
-        action_logger.log_round_end(0, initial_action_count)
+        if initial_posts:
+            initial_actions = {}
+            for post in initial_posts:
+                agent_id = post.get("poster_agent_id", 0)
+                content = post.get("content", "")
+                try:
+                    agent = result.env.agent_graph.get_agent(agent_id)
+                    if agent in initial_actions:
+                        if not isinstance(initial_actions[agent], list):
+                            initial_actions[agent] = [initial_actions[agent]]
+                        initial_actions[agent].append(ManualAction(
+                            action_type=ActionType.CREATE_POST,
+                            action_args={"content": content}
+                        ))
+                    else:
+                        initial_actions[agent] = ManualAction(
+                            action_type=ActionType.CREATE_POST,
+                            action_args={"content": content}
+                        )
+                    
+                    if action_logger:
+                        action_logger.log_action(
+                            round_num=0,
+                            agent_id=agent_id,
+                            agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
+                            action_type="CREATE_POST",
+                            action_args={"content": content}
+                        )
+                        total_actions += 1
+                        initial_action_count += 1
+                except Exception:
+                    pass
+            
+            if initial_actions:
+                await result.env.step(initial_actions)
+                log_info(f"已发布 {len(initial_actions)} 条初始帖子")
+        
+        # 记录 round 0 结束
+        if action_logger:
+            action_logger.log_round_end(0, initial_action_count)
+    else:
+        log_info(f"断点续跑模式: 跳过初始事件，从第 {start_round + 1} 轮开始")
     
     # 主模拟循环
     time_config = config.get("time_config", {})
@@ -1424,7 +1535,7 @@ async def run_reddit_simulation(
     
     start_time = datetime.now()
     
-    for round_num in range(total_rounds):
+    for round_num in range(start_round, total_rounds):
         # 检查是否收到退出信号
         if _shutdown_event and _shutdown_event.is_set():
             if main_logger:
@@ -1450,9 +1561,17 @@ async def run_reddit_simulation(
             continue
         
         actions = {agent: LLMAction() for _, agent in active_agents}
-        await result.env.step(actions)
+        try:
+            await result.env.step(actions)
+        except Exception as e:
+            error_msg = str(e)
+            # 上下文溢出等错误不应终止整个模拟，跳过本轮继续
+            if "context length" in error_msg or "is longer than" in error_msg or "token" in error_msg.lower():
+                log_info(f"Round {round_num + 1} 部分Agent上下文溢出，跳过本轮继续: {error_msg[:120]}")
+            else:
+                log_info(f"Round {round_num + 1} env.step 异常，跳过本轮继续: {error_msg[:200]}")
         
-        # 从数据库获取实际执行的动作并记录
+        # 从数据库获取实际执行的动作并记录（即使 step 出错，部分 agent 可能已成功写入数据库）
         actual_actions, last_rowid = fetch_new_actions_from_db(
             db_path, last_rowid, agent_names
         )
@@ -1519,6 +1638,18 @@ async def main():
         default=False,
         help='模拟完成后立即关闭环境，不进入等待命令模式'
     )
+    parser.add_argument(
+        '--resume',
+        action='store_true',
+        default=False,
+        help='断点续跑模式：不删除已有数据库，从 --start-round 指定的轮次继续'
+    )
+    parser.add_argument(
+        '--start-round',
+        type=int,
+        default=0,
+        help='与 --resume 搭配使用：从第 N 轮开始模拟（跳过前 N 轮）'
+    )
     
     args = parser.parse_args()
     
@@ -1547,6 +1678,8 @@ async def main():
     log_manager.info(f"配置文件: {args.config}")
     log_manager.info(f"模拟ID: {config.get('simulation_id', 'unknown')}")
     log_manager.info(f"等待命令模式: {'启用' if wait_for_commands else '禁用'}")
+    if args.resume:
+        log_manager.info(f"断点续跑模式: 从第 {args.start_round + 1} 轮开始")
     log_manager.info("=" * 60)
     
     time_config = config.get("time_config", {})
@@ -1577,14 +1710,26 @@ async def main():
     reddit_result: Optional[PlatformSimulation] = None
     
     if args.twitter_only:
-        twitter_result = await run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds)
+        twitter_result = await run_twitter_simulation(
+            config, simulation_dir, twitter_logger, log_manager, args.max_rounds,
+            resume=args.resume, start_round=args.start_round
+        )
     elif args.reddit_only:
-        reddit_result = await run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds)
+        reddit_result = await run_reddit_simulation(
+            config, simulation_dir, reddit_logger, log_manager, args.max_rounds,
+            resume=args.resume, start_round=args.start_round
+        )
     else:
         # 并行运行（每个平台使用独立的日志记录器）
         results = await asyncio.gather(
-            run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds),
-            run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds),
+            run_twitter_simulation(
+                config, simulation_dir, twitter_logger, log_manager, args.max_rounds,
+                resume=args.resume, start_round=args.start_round
+            ),
+            run_reddit_simulation(
+                config, simulation_dir, reddit_logger, log_manager, args.max_rounds,
+                resume=args.resume, start_round=args.start_round
+            ),
         )
         twitter_result, reddit_result = results
     
