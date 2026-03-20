@@ -191,7 +191,7 @@ class SimulationIPCClient:
         agent_id: int,
         prompt: str,
         platform: str = None,
-        timeout: float = 60.0
+        timeout: float = 180.0
     ) -> IPCResponse:
         """
         发送单个Agent采访命令
@@ -225,7 +225,7 @@ class SimulationIPCClient:
         self,
         interviews: List[Dict[str, Any]],
         platform: str = None,
-        timeout: float = 120.0
+        timeout: float = 300.0
     ) -> IPCResponse:
         """
         发送批量采访命令

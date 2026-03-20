@@ -1063,13 +1063,27 @@ class ReportAgent:
     # 合法的工具名称集合，用于裸 JSON 兜底解析时校验
     VALID_TOOL_NAMES = {"insight_forge", "panorama_search", "quick_search", "interview_agents"}
 
+    # LLM 可能输出的工具名变体 → 标准工具名映射
+    TOOL_NAME_ALIASES = {
+        "quicksearch": "quick_search",
+        "quick_search": "quick_search",
+        "insightforge": "insight_forge",
+        "insight_forge": "insight_forge",
+        "panoramasearch": "panorama_search",
+        "panorama_search": "panorama_search",
+        "interviewagents": "interview_agents",
+        "interview_agents": "interview_agents",
+        "interviewsubagent": "interview_agents",
+    }
+
     def _parse_tool_calls(self, response: str) -> List[Dict[str, Any]]:
         """
         从LLM响应中解析工具调用
 
         支持的格式（按优先级）：
         1. <tool_call>{"name": "tool_name", "parameters": {...}}</tool_call>
-        2. 裸 JSON（响应整体或单行就是一个工具调用 JSON）
+        2. call>toolname\n{"key": "value", ...}  （LLM 有时输出的非标准格式）
+        3. 裸 JSON（响应整体或单行就是一个工具调用 JSON）
         """
         tool_calls = []
 
@@ -1085,8 +1099,29 @@ class ReportAgent:
         if tool_calls:
             return tool_calls
 
-        # 格式2: 兜底 - LLM 直接输出裸 JSON（没包 <tool_call> 标签）
-        # 只在格式1未匹配时尝试，避免误匹配正文中的 JSON
+        # 格式2: call>toolname 格式（LLM 有时输出的非标准格式）
+        # 匹配 "call>quicksearch\n{...}" 或 "call>quick_search {...}"
+        call_pattern = r'call\s*>\s*(\w+)\s*\n?\s*(\{[^}]+\})'
+        for match in re.finditer(call_pattern, response, re.DOTALL):
+            raw_tool_name = match.group(1).lower().strip()
+            json_str = match.group(2)
+            # 映射到标准工具名
+            std_name = self.TOOL_NAME_ALIASES.get(raw_tool_name)
+            if std_name:
+                try:
+                    params = json.loads(json_str)
+                    tool_calls.append({
+                        "name": std_name,
+                        "parameters": params
+                    })
+                except json.JSONDecodeError:
+                    pass
+
+        if tool_calls:
+            return tool_calls
+
+        # 格式3: 兜底 - LLM 直接输出裸 JSON（没包 <tool_call> 标签）
+        # 只在前面格式未匹配时尝试，避免误匹配正文中的 JSON
         stripped = response.strip()
         if stripped.startswith('{') and stripped.endswith('}'):
             try:
@@ -1836,6 +1871,7 @@ class ReportAgent:
                 # 没有工具调用，直接返回响应
                 clean_response = re.sub(r'<tool_call>.*?</tool_call>', '', response, flags=re.DOTALL)
                 clean_response = re.sub(r'\[TOOL_CALL\].*?\)', '', clean_response)
+                clean_response = re.sub(r'call\s*>\s*\w+\s*\n?\s*\{[^}]*\}', '', clean_response, flags=re.DOTALL)
                 
                 return {
                     "response": clean_response.strip(),
@@ -1872,6 +1908,7 @@ class ReportAgent:
         # 清理响应
         clean_response = re.sub(r'<tool_call>.*?</tool_call>', '', final_response, flags=re.DOTALL)
         clean_response = re.sub(r'\[TOOL_CALL\].*?\)', '', clean_response)
+        clean_response = re.sub(r'call\s*>\s*\w+\s*\n?\s*\{[^}]*\}', '', clean_response, flags=re.DOTALL)
         
         return {
             "response": clean_response.strip(),
