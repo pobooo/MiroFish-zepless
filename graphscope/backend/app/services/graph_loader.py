@@ -100,9 +100,16 @@ class GraphLoaderService:
                 {"gid": gid},
             )
             top_entities = top_rows[0]["names"] if top_rows else []
+            # 查项目名称（从 GraphProject 元数据节点）
+            name_rows = self.client.run_query(
+                "MATCH (p:GraphProject {group_id: $gid}) RETURN p.name AS name LIMIT 1",
+                {"gid": gid},
+            )
+            project_name = name_rows[0]["name"] if name_rows else None
             groups.append(
                 GroupInfo(
                     group_id=gid,
+                    project_name=project_name,
                     node_count=row["node_count"],
                     edge_count=edge_count,
                     label_sample=label_sample,

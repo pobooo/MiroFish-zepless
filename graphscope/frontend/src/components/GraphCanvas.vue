@@ -14,6 +14,77 @@ const emit = defineEmits(['select-node'])
 const containerRef = ref(null)
 let simulation
 
+// ============== 配色 & 形状 ==============
+
+// 20 种高辨识度颜色（比 Tableau10 多一倍覆盖面）
+const TYPE_COLORS = [
+  '#60a5fa', // blue
+  '#f472b6', // pink
+  '#34d399', // emerald
+  '#fbbf24', // amber
+  '#a78bfa', // violet
+  '#fb923c', // orange
+  '#2dd4bf', // teal
+  '#f87171', // red
+  '#818cf8', // indigo
+  '#4ade80', // green
+  '#e879f9', // fuchsia
+  '#38bdf8', // sky
+  '#facc15', // yellow
+  '#c084fc', // purple
+  '#fb7185', // rose
+  '#22d3ee', // cyan
+  '#a3e635', // lime
+  '#f97316', // orange-dark
+  '#94a3b8', // slate
+  '#e2e8f0', // light
+]
+
+// 提取所有出现的实体类型（去掉 Entity/Node/Episodic 等系统标签）
+const SYSTEM_LABELS = new Set(['Entity', 'Node', 'Episodic'])
+const entityTypes = computed(() => {
+  const types = new Set()
+  for (const node of props.nodes) {
+    for (const lbl of (node.labels || [])) {
+      if (!SYSTEM_LABELS.has(lbl)) types.add(lbl)
+    }
+  }
+  return Array.from(types).sort()
+})
+
+// 颜色映射：类型名 → 颜色
+const colorMap = computed(() => {
+  const map = {}
+  entityTypes.value.forEach((t, i) => {
+    map[t] = TYPE_COLORS[i % TYPE_COLORS.length]
+  })
+  return map
+})
+
+function getNodeType(node) {
+  for (const lbl of (node.labels || [])) {
+    if (!SYSTEM_LABELS.has(lbl)) return lbl
+  }
+  return 'Entity'
+}
+
+function getNodeColor(node) {
+  return colorMap.value[getNodeType(node)] || '#94a3b8'
+}
+
+// 图例数据
+const legend = computed(() =>
+  entityTypes.value.map((t, i) => ({
+    type: t,
+    color: TYPE_COLORS[i % TYPE_COLORS.length],
+  }))
+)
+
+// 图例折叠状态
+const legendCollapsed = ref(false)
+
+// ============== 节点尺寸 ==============
+
 const sizedNodes = computed(() => {
   const values = Object.values(props.scoreMap)
   const maxScore = values.length ? Math.max(...values) : 1
@@ -23,61 +94,78 @@ const sizedNodes = computed(() => {
   }))
 })
 
+// ============== 渲染 ==============
+
 function render() {
   if (!containerRef.value) return
-  const width = containerRef.value.clientWidth || 720
-  const height = containerRef.value.clientHeight || 560
-  d3.select(containerRef.value).selectAll('*').remove()
+  const container = containerRef.value.querySelector('.canvas-area')
+  if (!container) return
+
+  const width = container.clientWidth || 720
+  const height = container.clientHeight || 560
+  d3.select(container).selectAll('*').remove()
 
   const svg = d3
-    .select(containerRef.value)
+    .select(container)
     .append('svg')
     .attr('viewBox', `0 0 ${width} ${height}`)
     .attr('width', '100%')
     .attr('height', '100%')
 
   const zoomLayer = svg.append('g')
+
+  // 点击空白处取消选中（关闭详情面板）
+  svg.on('click', (event) => {
+    // 只在点击 SVG 背景时触发，点击节点不触发
+    if (event.target.tagName === 'svg') {
+      emit('select-node', null)
+    }
+  })
+
   svg.call(
     d3.zoom().scaleExtent([0.25, 4]).on('zoom', (event) => {
       zoomLayer.attr('transform', event.transform)
     }),
   )
 
-  const color = d3.scaleOrdinal(d3.schemeTableau10)
   const links = props.edges.map((edge) => ({ ...edge }))
   const nodes = sizedNodes.value.map((node) => ({ ...node }))
 
+  // 边
   const link = zoomLayer
     .append('g')
-    .attr('stroke', 'rgba(124, 145, 186, 0.45)')
-    .attr('stroke-width', 1.2)
+    .attr('stroke', 'rgba(124, 145, 186, 0.35)')
+    .attr('stroke-width', 1)
     .selectAll('line')
     .data(links)
     .join('line')
 
+  // 节点组
   const node = zoomLayer
     .append('g')
     .selectAll('g')
     .data(nodes)
     .join('g')
     .style('cursor', 'pointer')
-    .on('click', (_, datum) => emit('select-node', datum.id))
 
-  node
+  // 节点圆形（颜色区分类型）
+  const circles = node
     .append('circle')
     .attr('r', (d) => d.visualSize)
-    .attr('fill', (d) => color((d.labels && d.labels[0]) || 'Entity'))
-    .attr('stroke', (d) => (d.id === props.selectedNodeId ? '#f8fafc' : '#182033'))
-    .attr('stroke-width', (d) => (d.id === props.selectedNodeId ? 4 : 1.5))
+    .attr('fill', (d) => getNodeColor(d))
+    .attr('stroke', (d) => (d.id === props.selectedNodeId ? '#f8fafc' : '#0f172a'))
+    .attr('stroke-width', (d) => (d.id === props.selectedNodeId ? 3 : 1.2))
     .attr('opacity', 0.92)
 
+  // 节点名称标签
   node
     .append('text')
     .text((d) => d.name)
     .attr('dx', (d) => d.visualSize + 6)
     .attr('dy', 4)
     .attr('fill', '#e2e8f0')
-    .attr('font-size', 12)
+    .attr('font-size', 11)
+    .attr('pointer-events', 'none')
 
   simulation = d3
     .forceSimulation(nodes)
@@ -95,37 +183,86 @@ function render() {
       node.attr('transform', (d) => `translate(${d.x},${d.y})`)
     })
 
+  // 拖拽 + 点击判断（拖拽距离 < 4px 视为点击）
+  let dragStartX = 0, dragStartY = 0, dragged = false
   node.call(
     d3
       .drag()
       .on('start', (event, d) => {
-        if (!event.active) simulation.alphaTarget(0.25).restart()
+        dragStartX = event.x
+        dragStartY = event.y
+        dragged = false
+        if (!event.active) simulation.alphaTarget(0.08).restart()
         d.fx = d.x
         d.fy = d.y
       })
-      .on('drag', (_, d) => {
-        d.fx = _.x
-        d.fy = _.y
+      .on('drag', (event, d) => {
+        const dx = event.x - dragStartX
+        const dy = event.y - dragStartY
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) dragged = true
+        d.fx = event.x
+        d.fy = event.y
       })
       .on('end', (event, d) => {
         if (!event.active) simulation.alphaTarget(0)
-        d.fx = null
-        d.fy = null
+        // 保持节点固定在拖拽位置，不会乱飘
+        // d.fx = null; d.fy = null  ← 不释放
+        if (!dragged) {
+          // 没有移动 → 视为点击
+          emit('select-node', d.id)
+        }
       }),
   )
+
+  // 保存 circles 引用，供选中状态更新用
+  currentCircles = circles
+  currentNodes = nodes
 }
 
-watch(() => [props.nodes, props.edges, props.selectedNodeId, props.scoreMap], render, { deep: true })
+// 保存引用，用于更新选中高亮而不重新渲染整个图
+let currentCircles = null
+let currentNodes = null
+
+function updateSelection() {
+  if (!currentCircles) return
+  currentCircles
+    .attr('stroke', (d) => (d.id === props.selectedNodeId ? '#f8fafc' : '#0f172a'))
+    .attr('stroke-width', (d) => (d.id === props.selectedNodeId ? 3 : 1.2))
+}
+
+// 数据变化时重新渲染
+watch(() => [props.nodes, props.edges, props.scoreMap], render, { deep: true })
+// 选中节点变化时只更新高亮，不重新布局
+watch(() => props.selectedNodeId, updateSelection)
 onMounted(render)
 onBeforeUnmount(() => simulation?.stop())
+
 </script>
 
 <template>
-  <div ref="containerRef" class="graph-canvas" />
+  <div ref="containerRef" class="graph-canvas">
+    <!-- 图例 -->
+    <div class="legend" :class="{ collapsed: legendCollapsed }">
+      <div class="legend-header" @click="legendCollapsed = !legendCollapsed">
+        <span class="legend-title">实体类型</span>
+        <span class="legend-count">{{ entityTypes.length }}</span>
+        <span class="legend-toggle">{{ legendCollapsed ? '▸' : '▾' }}</span>
+      </div>
+      <div v-if="!legendCollapsed" class="legend-body">
+        <div v-for="item in legend" :key="item.type" class="legend-item">
+          <span class="legend-dot" :style="{ background: item.color }"></span>
+          <span class="legend-label">{{ item.type }}</span>
+        </div>
+      </div>
+    </div>
+    <!-- 画布 -->
+    <div class="canvas-area" />
+  </div>
 </template>
 
 <style scoped>
 .graph-canvas {
+  position: relative;
   width: 100%;
   min-height: 560px;
   border-radius: 24px;
@@ -136,4 +273,93 @@ onBeforeUnmount(() => simulation?.stop())
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   overflow: hidden;
 }
+
+.canvas-area {
+  width: 100%;
+  height: 560px;
+  position: relative;
+}
+
+/* ---- 图例 ---- */
+.legend {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 10;
+  max-width: 200px;
+  max-height: 400px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.legend.collapsed {
+  max-height: 38px;
+}
+
+.legend-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.legend-header:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.legend-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.legend-count {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+
+.legend-toggle {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.legend-body {
+  padding: 4px 10px 10px;
+  overflow-y: auto;
+  max-height: 340px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 0;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  opacity: 0.92;
+}
+
+.legend-label {
+  font-size: 0.76rem;
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 </style>

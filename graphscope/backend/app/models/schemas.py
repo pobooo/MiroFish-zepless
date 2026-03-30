@@ -122,6 +122,7 @@ class GraphPathResponse(BaseModel):
 class GroupInfo(BaseModel):
     """单个 group_id（项目）的概要信息"""
     group_id: str
+    project_name: str | None = None
     node_count: int
     edge_count: int
     label_sample: list[str] = Field(default_factory=list, description="前几个出现频次最高的标签")
@@ -138,3 +139,46 @@ class HealthResponse(BaseModel):
     status: str
     neo4j_connected: bool
     app_name: str
+
+
+# ============== 图谱构建相关 ==============
+
+
+class OntologyRequest(BaseModel):
+    """本体生成请求"""
+    texts: list[str] = Field(description="文档文本列表")
+    requirement: str = Field(default="请分析文本内容，自动设计实体和关系类型", description="分析需求描述")
+    additional_context: str | None = None
+
+
+class OntologyResponse(BaseModel):
+    """本体生成响应"""
+    entity_types: list[dict[str, Any]] = Field(default_factory=list)
+    edge_types: list[dict[str, Any]] = Field(default_factory=list)
+    analysis_summary: str = ""
+
+
+class BuildRequest(BaseModel):
+    """图谱构建请求"""
+    text: str = Field(description="要构建图谱的文本")
+    ontology: dict[str, Any] = Field(description="本体定义（entity_types + edge_types）")
+    graph_name: str = Field(default="GraphScope Graph", description="图谱名称")
+    chunk_size: int = Field(default=500, ge=100, le=2000)
+    chunk_overlap: int = Field(default=50, ge=0, le=200)
+
+
+class BuildTaskResponse(BaseModel):
+    """图谱构建任务响应"""
+    task_id: str
+    status: str
+    progress: int = 0
+    message: str = ""
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class UploadResponse(BaseModel):
+    """文件上传响应"""
+    files: list[dict[str, str]] = Field(default_factory=list, description="上传的文件信息列表")
+    texts: list[str] = Field(default_factory=list, description="提取的文本列表")
+    total_chars: int = 0

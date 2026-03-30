@@ -1,10 +1,14 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { fetchGraphData, fetchGraphMetrics, fetchGroups, fetchHealth, fetchRagContext } from './api'
+import BuildPanel from './components/BuildPanel.vue'
 import ContextPanel from './components/ContextPanel.vue'
 import GraphCanvas from './components/GraphCanvas.vue'
 import MetricsPanel from './components/MetricsPanel.vue'
+import NodeDetailPanel from './components/NodeDetailPanel.vue'
 import RankingPanel from './components/RankingPanel.vue'
+
+const activeTab = ref('analyze') // analyze | build
 
 const health = ref(null)
 const groups = ref([])
@@ -81,6 +85,23 @@ const displayedRankingItems = computed(() => {
   // 过滤后再截断 Top K
   return items.slice(0, topK.value)
 })
+
+function formatGroupLabel(g) {
+  const stats = `${g.node_count}节点 ${g.edge_count}边`
+  const labels = g.label_sample?.length ? g.label_sample.slice(0, 2).join(', ') : ''
+
+  // 有项目名 → 直接用
+  if (g.project_name) {
+    return `📌 ${g.project_name} — ${stats}${labels ? ' · ' + labels : ''}`
+  }
+
+  // 无项目名 → 用 top_entities 做摘要
+  const source = g.group_id.startsWith('graphscope_') ? 'GS' : 'MF'
+  const shortId = g.group_id.replace('mirofish_', '').replace('graphscope_', '').slice(0, 6)
+  const entities = g.top_entities?.length ? g.top_entities.join(', ') : shortId
+
+  return `[${source}] ${entities} — ${stats}${labels ? ' · ' + labels : ''}`
+}
 
 async function refreshHealth() {
   try {
@@ -160,6 +181,16 @@ function selectNode(nodeId) {
   selectedNodeId.value = nodeId
 }
 
+async function onBuildComplete(result) {
+  // 构建完成后切换到分析页并刷新
+  if (result?.group_id) {
+    groupId.value = result.group_id
+  }
+  activeTab.value = 'analyze'
+  await refreshHealth()
+  await refresh()
+}
+
 onMounted(async () => {
   await refreshHealth()
   await refresh()
@@ -191,13 +222,30 @@ onMounted(async () => {
       </div>
     </header>
 
+    <!-- Tab 切换 -->
+    <nav class="tab-bar">
+      <button :class="{ active: activeTab === 'build' }" @click="activeTab = 'build'">
+        📦 图谱构建
+      </button>
+      <button :class="{ active: activeTab === 'analyze' }" @click="activeTab = 'analyze'">
+        📊 图谱分析
+      </button>
+    </nav>
+
+    <!-- 构建面板（v-show 保持状态） -->
+    <section v-show="activeTab === 'build'" class="build-section">
+      <BuildPanel @build-complete="onBuildComplete" />
+    </section>
+
+    <!-- 分析面板（原有内容） -->
+    <template v-if="activeTab === 'analyze'">
     <section class="toolbar">
       <label>
         <span>项目 (Group)</span>
         <select v-model="groupId">
           <option value="">自动选取（节点最多）</option>
           <option v-for="g in groups" :key="g.group_id" :value="g.group_id">
-            {{ g.top_entities.length ? g.top_entities.join(', ') : g.group_id.replace('mirofish_', '').slice(0, 8) }} — {{ g.node_count }}节点 {{ g.edge_count }}边 · {{ g.group_id.replace('mirofish_', '').slice(0, 8) }}{{ g.label_sample.length ? ' · ' + g.label_sample.slice(0, 2).join(', ') : '' }}
+            {{ formatGroupLabel(g) }}
           </option>
         </select>
       </label>
@@ -229,29 +277,19 @@ onMounted(async () => {
 
     <section class="dashboard-grid">
       <div class="main-column">
-        <GraphCanvas
-          :nodes="graph.nodes"
-          :edges="graph.edges"
-          :score-map="scoreMap"
-          :selected-node-id="selectedNodeId"
-          @select-node="selectNode"
-        />
-
-        <section class="panel selected-panel">
-          <div class="panel-header">
-            <h2>节点详情</h2>
-            <p>选中节点的标签、摘要和原始属性</p>
-          </div>
-          <div v-if="selectedNode" class="selected-body">
-            <div>
-              <strong class="selected-name">{{ selectedNode.name }}</strong>
-              <p class="selected-tags">{{ selectedNode.labels?.join(' · ') || 'Entity' }}</p>
-            </div>
-            <p class="selected-summary">{{ selectedNode.summary || '暂无摘要，可结合 Graphiti 的 summary 字段补全。' }}</p>
-            <pre>{{ JSON.stringify(selectedNode.attributes || {}, null, 2) }}</pre>
-          </div>
-          <div v-else class="empty-state">暂无节点数据</div>
-        </section>
+        <div class="graph-wrapper">
+          <GraphCanvas
+            :nodes="graph.nodes"
+            :edges="graph.edges"
+            :score-map="scoreMap"
+            :selected-node-id="selectedNodeId"
+            @select-node="selectNode"
+          />
+          <NodeDetailPanel
+            :node="selectedNode"
+            @close="selectedNodeId = null"
+          />
+        </div>
       </div>
 
       <div class="side-column">
@@ -326,6 +364,7 @@ onMounted(async () => {
 
       <ContextPanel :context="ragContext" :loading="ragLoading" />
     </section>
+    </template>
   </main>
 </template>
 
@@ -384,7 +423,6 @@ h1 {
 
 .hero-status > div,
 .toolbar,
-.selected-panel,
 .rag-toolbar {
   padding: 18px 20px;
   border-radius: 24px;
@@ -410,9 +448,45 @@ h1 {
 .ok { color: #86efac; }
 .bad { color: #fca5a5; }
 
+.tab-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.tab-bar button {
+  width: auto;
+  margin: 0;
+  padding: 10px 24px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: rgba(15, 23, 42, 0.6);
+  color: #94a3b8;
+  font: inherit;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab-bar button.active {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.3), rgba(124, 58, 237, 0.3));
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #f1f5f9;
+  font-weight: 600;
+}
+
+.tab-bar button:hover:not(.active) {
+  background: rgba(15, 23, 42, 0.85);
+  color: #cbd5e1;
+}
+
+.build-section {
+  max-width: 960px;
+}
+
 .toolbar {
   display: grid;
-  grid-template-columns: 1.8fr 1.2fr 1fr 0.7fr auto;
+  grid-template-columns: 2.4fr 1fr 1fr 0.6fr auto;
   gap: 14px;
   margin-bottom: 24px;
   align-items: end;
@@ -583,24 +657,8 @@ button:disabled {
   gap: 24px;
 }
 
-.selected-panel .panel-header h2 {
-  margin: 0;
-  font-size: 1.05rem;
-}
-
-.selected-panel .panel-header p,
-.empty-state,
-.selected-tags,
-.selected-summary {
-  color: #93a4c3;
-}
-
-.selected-body {
-  margin-top: 18px;
-}
-
-.selected-name {
-  font-size: 1.15rem;
+.graph-wrapper {
+  position: relative;
 }
 
 pre {

@@ -17,6 +17,13 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.20",
+    # 图谱构建（Graphiti SDK）
+    "graphiti-core>=0.28.0",
+    "openai>=1.0.0",
+    "sentence-transformers>=3.0.0",
+    # 文件解析
+    "PyMuPDF>=1.24.0",
+    "charset-normalizer>=3.0.0",
 ]
 
 [project.optional-dependencies]

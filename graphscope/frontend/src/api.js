@@ -55,3 +55,39 @@ export function fetchRagContext(payload) {
     body: JSON.stringify(payload),
   })
 }
+
+// ============== 图谱构建 API ==============
+
+export async function uploadFiles(files) {
+  const formData = new FormData()
+  for (const file of files) {
+    formData.append('files', file)
+  }
+  const response = await fetch(`${API_BASE}/build/upload`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!response.ok) {
+    const message = await response.text()
+    throw new Error(message || `Upload failed with ${response.status}`)
+  }
+  return response.json()
+}
+
+export function generateOntology(payload) {
+  return request('/build/ontology', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function buildGraph(payload) {
+  return request('/build/graph', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function fetchBuildTask(taskId) {
+  return request(`/build/task/${taskId}`)
+}

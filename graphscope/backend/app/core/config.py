@@ -28,6 +28,19 @@ class Settings(BaseSettings):
     shortest_path_cutoff: int = 6
     graph_source_mode: Literal["graphiti", "generic"] = "graphiti"
 
+    # LLM 配置（用于本体生成和图谱构建）
+    llm_api_key: str = ""
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_model_name: str = "gpt-4o-mini"
+
+    # 文件上传配置
+    upload_dir: str = "uploads"
+    max_upload_size_mb: int = 50
+
+    # 文本处理配置
+    default_chunk_size: int = 500
+    default_chunk_overlap: int = 50
+
     model_config = SettingsConfigDict(
         env_prefix="GRAPHSCOPE_",
         env_file=".env",

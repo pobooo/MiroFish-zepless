@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+import os
+import uuid
+from pathlib import Path
+from typing import List
+
+from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException
 
 from app.core.cache import TTLCache
 from app.core.config import Settings, get_settings
 from app.models.schemas import (
+    BuildRequest,
+    BuildTaskResponse,
     CommunityResponse,
     GraphData,
     GraphMetricsResponse,
@@ -12,9 +19,12 @@ from app.models.schemas import (
     GraphSummaryResponse,
     GroupListResponse,
     HealthResponse,
+    OntologyRequest,
+    OntologyResponse,
     RAGContextRequest,
     RAGContextResponse,
     RankingResponse,
+    UploadResponse,
 )
 from app.services.analysis import GraphAnalysisService
 from app.services.graph_loader import GraphLoaderService, SelectionMode
@@ -188,3 +198,113 @@ def rag_paths(
 ) -> GraphPathResponse:
     graph = _load_graph(loader, graph_id, group_id)
     return rag_service.find_paths(graph, source, target, max_depth=max_depth)
+
+
+# =====================================================================
+# 图谱构建 API
+# =====================================================================
+
+
+@router.post("/build/upload", response_model=UploadResponse)
+async def upload_files(
+    files: List[UploadFile] = File(...),
+    settings: Settings = Depends(get_settings),
+) -> UploadResponse:
+    """上传文件并提取文本"""
+    from app.utils.file_parser import FileParser
+
+    upload_dir = Path(settings.upload_dir)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    max_size = settings.max_upload_size_mb * 1024 * 1024
+    saved_files = []
+    texts = []
+
+    for file in files:
+        # 检查文件类型
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix not in FileParser.SUPPORTED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"不支持的文件格式: {suffix}，支持: {', '.join(FileParser.SUPPORTED_EXTENSIONS)}",
+            )
+
+        # 读取文件内容
+        content = await file.read()
+        if len(content) > max_size:
+            raise HTTPException(
+                status_code=400,
+                detail=f"文件 {file.filename} 超过 {settings.max_upload_size_mb}MB 限制",
+            )
+
+        # 保存到临时目录
+        save_name = f"{uuid.uuid4().hex[:8]}_{file.filename}"
+        save_path = upload_dir / save_name
+        save_path.write_bytes(content)
+
+        # 提取文本
+        try:
+            text = FileParser.extract_text(str(save_path))
+            texts.append(text)
+            saved_files.append({
+                "filename": file.filename or "",
+                "saved_as": save_name,
+                "size": str(len(content)),
+                "chars": str(len(text)),
+            })
+        except Exception as e:
+            # 清理失败的文件
+            save_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail=f"文件 {file.filename} 解析失败: {str(e)}")
+
+    total_chars = sum(len(t) for t in texts)
+    return UploadResponse(files=saved_files, texts=texts, total_chars=total_chars)
+
+
+@router.post("/build/ontology", response_model=OntologyResponse)
+def generate_ontology(request: OntologyRequest) -> OntologyResponse:
+    """根据文本内容生成本体定义"""
+    from app.services.ontology_generator import OntologyGenerator
+
+    generator = OntologyGenerator()
+    result = generator.generate(
+        document_texts=request.texts,
+        analysis_requirement=request.requirement,
+        additional_context=request.additional_context,
+    )
+    return OntologyResponse(**result)
+
+
+@router.post("/build/graph", response_model=BuildTaskResponse)
+def build_graph(request: BuildRequest) -> BuildTaskResponse:
+    """启动图谱构建任务（异步，返回 task_id）"""
+    from app.services.graph_builder import GraphBuilderService
+
+    builder = GraphBuilderService()
+    task_id = builder.build_graph_async(
+        text=request.text,
+        ontology=request.ontology,
+        graph_name=request.graph_name,
+        chunk_size=request.chunk_size,
+        chunk_overlap=request.chunk_overlap,
+    )
+    return BuildTaskResponse(task_id=task_id, status="pending", message="任务已创建")
+
+
+@router.get("/build/task/{task_id}", response_model=BuildTaskResponse)
+def get_build_task(task_id: str) -> BuildTaskResponse:
+    """查询图谱构建任务状态"""
+    from app.services.graph_builder import get_task
+
+    task = get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+
+    return BuildTaskResponse(
+        task_id=task.task_id,
+        status=task.status,
+        progress=task.progress,
+        message=task.message,
+        result=task.result,
+        error=task.error,
+    )
