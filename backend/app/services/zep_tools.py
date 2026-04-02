@@ -30,18 +30,25 @@ logger = get_logger('mirofish.zep_tools')
 
 
 def _run_async(coro):
-    """在同步代码中运行异步协程"""
+    """
+    在同步代码中运行异步协程。
+    
+    始终创建独立的事件循环来运行协程，避免 Graphiti/Neo4j 客户端
+    跨事件循环时的 "Future attached to a different loop" 错误。
+    """
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
     
     if loop and loop.is_running():
+        # 已有运行中的事件循环 → 在新线程的新循环中执行
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(asyncio.run, coro)
             return future.result()
     else:
+        # 无运行中的循环 → 直接创建新循环执行
         return asyncio.run(coro)
 
 
@@ -396,16 +403,37 @@ class ZepToolsService:
     
     def __init__(self, api_key: Optional[str] = None, llm_client: Optional[LLMClient] = None):
         # api_key 参数保留以兼容旧代码，不再使用
-        self._graphiti: Optional[Graphiti] = None
         self._llm_client = llm_client
         logger.info("ZepToolsService 初始化完成（Graphiti 后端）")
     
-    async def _get_client(self) -> Graphiti:
-        """获取 Graphiti 客户端"""
-        if self._graphiti is None:
-            from graphiti.graphiti_client import get_graphiti_client
-            self._graphiti = await get_graphiti_client()
-        return self._graphiti
+    async def _create_client(self) -> Graphiti:
+        """
+        创建一个新的 Graphiti 客户端实例（轻量版，跳过索引构建）。
+        
+        每次 _run_async() 都会创建新的事件循环，因此不能复用旧客户端
+        （Neo4j AsyncDriver 绑定到创建时的事件循环）。
+        调用方必须在 async with self._client_context() 块中使用，确保用完关闭。
+        """
+        from graphiti.graphiti_client import create_graphiti_client_lite
+        return await create_graphiti_client_lite()
+    
+    class _client_context:
+        """异步上下文管理器：自动创建和关闭 Graphiti 客户端"""
+        def __init__(self, service: 'ZepToolsService'):
+            self._service = service
+            self._client: Optional[Graphiti] = None
+        
+        async def __aenter__(self) -> Graphiti:
+            self._client = await self._service._create_client()
+            return self._client
+        
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            if self._client is not None:
+                try:
+                    await self._client.close()
+                except Exception:
+                    pass
+                self._client = None
     
     @property
     def llm(self) -> LLMClient:
@@ -436,52 +464,51 @@ class ZepToolsService:
         """图谱搜索异步实现"""
         logger.info(f"图谱搜索: graph_id={graph_id}, query={query[:50]}...")
         
-        graphiti = await self._get_client()
-        
         facts = []
         edges = []
         nodes = []
         
         try:
-            if scope in ["edges", "both"]:
-                # 使用 Graphiti search API 搜索边
-                search_edges = await graphiti.search(
-                    query=query,
-                    group_ids=[graph_id] if graph_id else None,
-                    num_results=limit,
-                )
+            async with self._client_context(self) as graphiti:
+                if scope in ["edges", "both"]:
+                    # 使用 Graphiti search API 搜索边
+                    search_edges = await graphiti.search(
+                        query=query,
+                        group_ids=[graph_id] if graph_id else None,
+                        num_results=limit,
+                    )
+                    
+                    for edge in search_edges:
+                        if edge.fact:
+                            facts.append(edge.fact)
+                        edges.append({
+                            "uuid": edge.uuid,
+                            "name": edge.name or "",
+                            "fact": edge.fact or "",
+                            "source_node_uuid": edge.source_node_uuid,
+                            "target_node_uuid": edge.target_node_uuid,
+                        })
                 
-                for edge in search_edges:
-                    if edge.fact:
-                        facts.append(edge.fact)
-                    edges.append({
-                        "uuid": edge.uuid,
-                        "name": edge.name or "",
-                        "fact": edge.fact or "",
-                        "source_node_uuid": edge.source_node_uuid,
-                        "target_node_uuid": edge.target_node_uuid,
-                    })
-            
-            if scope in ["nodes", "both"]:
-                # 使用 search_ 获取节点搜索结果
-                from graphiti_core.search.search_config_recipes import NODE_HYBRID_SEARCH_RRF
-                search_results = await graphiti.search_(
-                    query=query,
-                    config=NODE_HYBRID_SEARCH_RRF,
-                    group_ids=[graph_id] if graph_id else None,
-                )
+                if scope in ["nodes", "both"]:
+                    # 使用 search_ 获取节点搜索结果
+                    from graphiti_core.search.search_config_recipes import NODE_HYBRID_SEARCH_RRF
+                    search_results = await graphiti.search_(
+                        query=query,
+                        config=NODE_HYBRID_SEARCH_RRF,
+                        group_ids=[graph_id] if graph_id else None,
+                    )
+                    
+                    for node in search_results.nodes:
+                        nodes.append({
+                            "uuid": node.uuid,
+                            "name": node.name or "",
+                            "labels": node.labels or [],
+                            "summary": node.summary or "",
+                        })
+                        if node.summary:
+                            facts.append(f"[{node.name}]: {node.summary}")
                 
-                for node in search_results.nodes:
-                    nodes.append({
-                        "uuid": node.uuid,
-                        "name": node.name or "",
-                        "labels": node.labels or [],
-                        "summary": node.summary or "",
-                    })
-                    if node.summary:
-                        facts.append(f"[{node.name}]: {node.summary}")
-            
-            logger.info(f"搜索完成: 找到 {len(facts)} 条相关事实")
+                logger.info(f"搜索完成: 找到 {len(facts)} 条相关事实")
             
         except Exception as e:
             logger.warning(f"Graphiti Search API失败，降级为本地搜索: {str(e)}")
@@ -525,48 +552,47 @@ class ZepToolsService:
             return score
         
         try:
-            graphiti = await self._get_client()
-            
-            if scope in ["edges", "both"]:
-                all_edges = await self._get_all_edges_async(graph_id)
-                scored_edges = []
-                for edge in all_edges:
-                    score = match_score(edge.fact) + match_score(edge.name)
-                    if score > 0:
-                        scored_edges.append((score, edge))
+            async with self._client_context(self) as graphiti:
+                if scope in ["edges", "both"]:
+                    all_edges = await fetch_all_edges(graphiti, group_id=graph_id)
+                    scored_edges = []
+                    for edge in all_edges:
+                        score = match_score(edge.fact) + match_score(edge.name)
+                        if score > 0:
+                            scored_edges.append((score, edge))
+                    
+                    scored_edges.sort(key=lambda x: x[0], reverse=True)
+                    
+                    for score, edge in scored_edges[:limit]:
+                        if edge.fact:
+                            facts.append(edge.fact)
+                        edges_result.append({
+                            "uuid": edge.uuid,
+                            "name": edge.name,
+                            "fact": edge.fact,
+                            "source_node_uuid": edge.source_node_uuid,
+                            "target_node_uuid": edge.target_node_uuid,
+                        })
                 
-                scored_edges.sort(key=lambda x: x[0], reverse=True)
-                
-                for score, edge in scored_edges[:limit]:
-                    if edge.fact:
-                        facts.append(edge.fact)
-                    edges_result.append({
-                        "uuid": edge.uuid,
-                        "name": edge.name,
-                        "fact": edge.fact,
-                        "source_node_uuid": edge.source_node_uuid,
-                        "target_node_uuid": edge.target_node_uuid,
-                    })
-            
-            if scope in ["nodes", "both"]:
-                all_nodes = await self._get_all_nodes_async(graph_id)
-                scored_nodes = []
-                for node in all_nodes:
-                    score = match_score(node.name) + match_score(node.summary)
-                    if score > 0:
-                        scored_nodes.append((score, node))
-                
-                scored_nodes.sort(key=lambda x: x[0], reverse=True)
-                
-                for score, node in scored_nodes[:limit]:
-                    nodes_result.append({
-                        "uuid": node.uuid,
-                        "name": node.name,
-                        "labels": node.labels,
-                        "summary": node.summary,
-                    })
-                    if node.summary:
-                        facts.append(f"[{node.name}]: {node.summary}")
+                if scope in ["nodes", "both"]:
+                    all_nodes = await fetch_all_nodes(graphiti, group_id=graph_id)
+                    scored_nodes = []
+                    for node in all_nodes:
+                        score = match_score(node.name) + match_score(node.summary)
+                        if score > 0:
+                            scored_nodes.append((score, node))
+                    
+                    scored_nodes.sort(key=lambda x: x[0], reverse=True)
+                    
+                    for score, node in scored_nodes[:limit]:
+                        nodes_result.append({
+                            "uuid": node.uuid,
+                            "name": node.name,
+                            "labels": node.labels,
+                            "summary": node.summary,
+                        })
+                        if node.summary:
+                            facts.append(f"[{node.name}]: {node.summary}")
             
         except Exception as e:
             logger.error(f"本地搜索失败: {str(e)}")
@@ -583,13 +609,13 @@ class ZepToolsService:
     
     async def _get_all_nodes_async(self, graph_id: str) -> List[GraphitiEntityNode]:
         """获取所有节点（原始 Graphiti 对象）"""
-        graphiti = await self._get_client()
-        return await fetch_all_nodes(graphiti, group_id=graph_id)
+        async with self._client_context(self) as graphiti:
+            return await fetch_all_nodes(graphiti, group_id=graph_id)
     
     async def _get_all_edges_async(self, graph_id: str) -> List[GraphitiEntityEdge]:
         """获取所有边（原始 Graphiti 对象）"""
-        graphiti = await self._get_client()
-        return await fetch_all_edges(graphiti, group_id=graph_id)
+        async with self._client_context(self) as graphiti:
+            return await fetch_all_edges(graphiti, group_id=graph_id)
     
     def get_all_nodes(self, graph_id: str) -> List[NodeInfo]:
         """获取图谱的所有节点"""
@@ -651,19 +677,19 @@ class ZepToolsService:
         """获取节点详情异步实现"""
         logger.info(f"获取节点详情: {node_uuid[:8]}...")
         try:
-            graphiti = await self._get_client()
-            node = await GraphitiEntityNode.get_by_uuid(graphiti.driver, node_uuid)
-            
-            if not node:
-                return None
-            
-            return NodeInfo(
-                uuid=node.uuid,
-                name=node.name or "",
-                labels=node.labels or [],
-                summary=node.summary or "",
-                attributes=node.attributes or {}
-            )
+            async with self._client_context(self) as graphiti:
+                node = await GraphitiEntityNode.get_by_uuid(graphiti.driver, node_uuid)
+                
+                if not node:
+                    return None
+                
+                return NodeInfo(
+                    uuid=node.uuid,
+                    name=node.name or "",
+                    labels=node.labels or [],
+                    summary=node.summary or "",
+                    attributes=node.attributes or {}
+                )
         except Exception as e:
             logger.error(f"获取节点详情失败: {str(e)}")
             return None
@@ -676,25 +702,25 @@ class ZepToolsService:
         """获取节点边信息"""
         logger.info(f"获取节点 {node_uuid[:8]}... 的相关边")
         try:
-            graphiti = await self._get_client()
-            edges = await fetch_node_edges(graphiti, node_uuid)
-            
-            result = []
-            for edge in edges:
-                result.append(EdgeInfo(
-                    uuid=edge.uuid,
-                    name=edge.name or "",
-                    fact=edge.fact or "",
-                    source_node_uuid=edge.source_node_uuid or "",
-                    target_node_uuid=edge.target_node_uuid or "",
-                    created_at=str(edge.created_at) if edge.created_at else None,
-                    valid_at=str(edge.valid_at) if edge.valid_at else None,
-                    invalid_at=str(edge.invalid_at) if edge.invalid_at else None,
-                    expired_at=str(edge.expired_at) if edge.expired_at else None,
-                ))
-            
-            logger.info(f"找到 {len(result)} 条与节点相关的边")
-            return result
+            async with self._client_context(self) as graphiti:
+                edges = await fetch_node_edges(graphiti, node_uuid)
+                
+                result = []
+                for edge in edges:
+                    result.append(EdgeInfo(
+                        uuid=edge.uuid,
+                        name=edge.name or "",
+                        fact=edge.fact or "",
+                        source_node_uuid=edge.source_node_uuid or "",
+                        target_node_uuid=edge.target_node_uuid or "",
+                        created_at=str(edge.created_at) if edge.created_at else None,
+                        valid_at=str(edge.valid_at) if edge.valid_at else None,
+                        invalid_at=str(edge.invalid_at) if edge.invalid_at else None,
+                        expired_at=str(edge.expired_at) if edge.expired_at else None,
+                    ))
+                
+                logger.info(f"找到 {len(result)} 条与节点相关的边")
+                return result
         except Exception as e:
             logger.warning(f"获取节点边失败: {str(e)}")
             return []

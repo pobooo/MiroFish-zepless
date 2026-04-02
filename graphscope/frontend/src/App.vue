@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { fetchGraphData, fetchGraphMetrics, fetchGroups, fetchHealth, fetchRagContext } from './api'
 import BuildPanel from './components/BuildPanel.vue'
 import ContextPanel from './components/ContextPanel.vue'
+import EdgeDetailPanel from './components/EdgeDetailPanel.vue'
 import GraphCanvas from './components/GraphCanvas.vue'
 import MetricsPanel from './components/MetricsPanel.vue'
 import NodeDetailPanel from './components/NodeDetailPanel.vue'
@@ -27,11 +28,12 @@ const error = ref('')
 const graph = ref({ nodes: [], edges: [], graph_id: 'default' })
 const metrics = ref(null)
 const ragContext = ref(null)
+const contextPanelRef = ref(null)
 const selectedNodeId = ref(null)
+const selectedEdge = ref(null)
 
 const scoreMap = computed(() => {
-  const activeMetric = rankingView.value === 'importance' ? metric.value : rankingView.value
-  const items = metrics.value?.rankings?.[activeMetric] || []
+  const items = metrics.value?.rankings?.[rankingView.value] || []
   return Object.fromEntries(items.map((item) => [item.node_id, item.score]))
 })
 
@@ -39,18 +41,23 @@ const selectedNode = computed(() => graph.value.nodes.find((node) => node.id ===
 const importantNodes = computed(() => metrics.value?.important_nodes || [])
 
 const entityTypeFilter = ref('')
-const rankingView = ref('importance')
+const rankingView = ref('pagerank')
 
 // 指标描述，供用户参考
 const metricDescriptions = {
-  importance: { name: '综合评分', desc: '加权融合所有指标的综合排名，PageRank 和 Betweenness 权重更高。不确定关注什么时的默认选择。' },
   pagerank: { name: 'PageRank（影响力）', desc: '被"重要节点"指向的节点更重要。适合发现全局最有影响力的核心节点，如行业巨头。' },
   betweenness_centrality: { name: 'Betweenness（桥接力）', desc: '处于多个节点对之间最短路径上的程度。适合发现信息传播的关键枢纽和跨社区桥梁节点。' },
   degree_centrality: { name: 'Degree（连接数）', desc: '直接连接的邻居数量。适合发现局部最活跃的节点，简单直观但不考虑连接质量。' },
   closeness_centrality: { name: 'Closeness（接近度）', desc: '到其他所有节点的平均距离最短。适合发现信息扩散最快、位置最中心的节点。' },
   eigenvector_centrality: { name: 'Eigenvector（圈子质量）', desc: '连接到高分节点的节点得分更高。适合发现处于核心权力圈中的节点。' },
+  katz_centrality: { name: 'Katz（间接影响力）', desc: '考虑所有路径（不只最短路径）的影响力，带衰减系数。发现间接影响力大的节点。' },
+  harmonic_centrality: { name: 'Harmonic（调和接近度）', desc: 'Closeness 的改进版，处理非连通图更稳健。适合有孤立社区的图谱。' },
+  clustering_coefficient: { name: 'Clustering（聚类系数）', desc: '节点邻居之间的互连程度（抱团系数）。高值节点处于紧密圈子中。' },
+  core_number: { name: 'K-Core（核心层数）', desc: '节点所属的最大 k-core 层数。值越大说明越处于图谱的核心层，而非边缘。' },
+  hits_hub: { name: 'HITS Hub（枢纽分）', desc: '指向大量权威节点的枢纽得分。适合发现信息分发中心。' },
+  hits_authority: { name: 'HITS Authority（权威分）', desc: '被大量枢纽指向的权威得分。适合发现被广泛引用的权威节点。' },
 }
-const currentMetricDesc = computed(() => metricDescriptions[rankingView.value] || metricDescriptions.importance)
+const currentMetricDesc = computed(() => metricDescriptions[rankingView.value] || metricDescriptions.pagerank)
 
 // 实体类型：从 Neo4j 标签提取（包含所有标签）
 const entityTypes = computed(() => {
@@ -70,12 +77,7 @@ const entityTypes = computed(() => {
 
 // 统一排行数据：根据选择的视角返回不同数据源，先按类型过滤再取 Top K
 const displayedRankingItems = computed(() => {
-  let items
-  if (rankingView.value === 'importance') {
-    items = importantNodes.value
-  } else {
-    items = metrics.value?.rankings?.[rankingView.value] || []
-  }
+  let items = metrics.value?.rankings?.[rankingView.value] || []
   // 类型过滤
   if (entityTypeFilter.value) {
     items = items.filter((node) =>
@@ -124,7 +126,7 @@ async function refresh() {
   error.value = ''
   selectedNodeId.value = null
   entityTypeFilter.value = ''
-  rankingView.value = 'importance'
+  rankingView.value = 'pagerank'
   metrics.value = null  // 立即清空旧指标，避免显示上一个项目的数据
   try {
     // 1. 先加载图数据（快，1-2秒）
@@ -133,9 +135,7 @@ async function refresh() {
     if (!groupId.value && graphData.graph_id && graphData.graph_id !== 'default') {
       groupId.value = graphData.graph_id
     }
-    if (graphData.nodes.length) {
-      selectedNodeId.value = graphData.nodes[0].id
-    }
+
   } catch (err) {
     error.value = err.message || '加载失败'
   } finally {
@@ -174,11 +174,19 @@ async function generateContext() {
     error.value = err.message || '上下文生成失败'
   } finally {
     ragLoading.value = false
+    // 主动刷新迷你图谱
+    setTimeout(() => contextPanelRef.value?.refresh(), 100)
   }
 }
 
 function selectNode(nodeId) {
   selectedNodeId.value = nodeId
+  if (nodeId) selectedEdge.value = null
+}
+
+function selectEdge(edge) {
+  selectedEdge.value = edge
+  if (edge) selectedNodeId.value = null
 }
 
 async function onBuildComplete(result) {
@@ -283,11 +291,18 @@ onMounted(async () => {
             :edges="graph.edges"
             :score-map="scoreMap"
             :selected-node-id="selectedNodeId"
+            :selected-edge-id="selectedEdge?.id || null"
             @select-node="selectNode"
+            @select-edge="selectEdge"
           />
           <NodeDetailPanel
             :node="selectedNode"
             @close="selectedNodeId = null"
+          />
+          <EdgeDetailPanel
+            :edge="selectedEdge"
+            :nodes="graph.nodes"
+            @close="selectedEdge = null"
           />
         </div>
       </div>
@@ -309,12 +324,17 @@ onMounted(async () => {
             </div>
             <div class="type-filter-right">
               <select v-model="rankingView" class="type-filter-select">
-                <option value="importance">综合评分</option>
                 <option value="pagerank">PageRank（影响力）</option>
                 <option value="betweenness_centrality">Betweenness（桥接力）</option>
                 <option value="degree_centrality">Degree（连接数）</option>
                 <option value="closeness_centrality">Closeness（接近度）</option>
                 <option value="eigenvector_centrality">Eigenvector（圈子质量）</option>
+                <option value="katz_centrality">Katz（间接影响力）</option>
+                <option value="harmonic_centrality">Harmonic（调和接近度）</option>
+                <option value="clustering_coefficient">Clustering（聚类系数）</option>
+                <option value="core_number">K-Core（核心层数）</option>
+                <option value="hits_hub">HITS Hub（枢纽分）</option>
+                <option value="hits_authority">HITS Authority（权威分）</option>
               </select>
               <select v-model="entityTypeFilter" class="type-filter-select">
                 <option value="">全部类型</option>
@@ -362,7 +382,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <ContextPanel :context="ragContext" :loading="ragLoading" />
+      <ContextPanel ref="contextPanelRef" :context="ragContext" :loading="ragLoading" />
     </section>
     </template>
   </main>

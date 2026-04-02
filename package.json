@@ -9,7 +9,13 @@
     "dev": "concurrently --kill-others -n \"backend,frontend\" -c \"green,cyan\" \"npm run backend\" \"npm run frontend\"",
     "backend": "cd backend && uv run python run.py",
     "frontend": "cd frontend && npm run dev",
-    "build": "cd frontend && npm run build"
+    "build": "cd frontend && npm run build",
+    "graphscope:setup": "cd graphscope/frontend && npm install && cd ../backend && uv sync",
+    "graphscope:backend": "cd graphscope/backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 8008",
+    "graphscope:frontend": "cd graphscope/frontend && npm run dev",
+    "graphscope:dev": "concurrently --kill-others -n \"graphscope-api,graphscope-ui\" -c \"magenta,blue\" \"npm run graphscope:backend\" \"npm run graphscope:frontend\"",
+    "graphscope:build": "cd graphscope/frontend && npm run build",
+    "graphscope:docker": "cd graphscope && docker compose up --build"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

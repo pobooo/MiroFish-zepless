@@ -39,16 +39,40 @@ function formatValue(value) {
         <strong>{{ formatValue(metrics.average_clustering) }}</strong>
       </article>
       <article class="metric-card">
+        <span>全局聚类系数 (Transitivity)</span>
+        <strong>{{ formatValue(metrics.transitivity) }}</strong>
+      </article>
+      <article class="metric-card">
         <span>最大连通子图</span>
         <strong>{{ formatValue(metrics.largest_component_size) }}</strong>
+      </article>
+      <article class="metric-card">
+        <span>连通分量数</span>
+        <strong>{{ formatValue(metrics.connected_components) }}</strong>
       </article>
       <article class="metric-card">
         <span>平均最短路径</span>
         <strong>{{ formatValue(metrics.average_shortest_path_length) }}</strong>
       </article>
       <article class="metric-card">
+        <span>网络直径</span>
+        <strong>{{ formatValue(metrics.diameter) }}</strong>
+      </article>
+      <article class="metric-card">
         <span>桥边数量</span>
         <strong>{{ formatValue(metrics.bridge_edge_count) }}</strong>
+      </article>
+      <article class="metric-card">
+        <span>同配系数 (Assortativity)</span>
+        <strong>{{ formatValue(metrics.assortativity) }}</strong>
+      </article>
+      <article class="metric-card">
+        <span>模块度 (Modularity)</span>
+        <strong>{{ formatValue(metrics.modularity) }}</strong>
+      </article>
+      <article class="metric-card">
+        <span>最大 K-Core 层数</span>
+        <strong>{{ formatValue(metrics.max_core_number) }}</strong>
       </article>
     </div>
 

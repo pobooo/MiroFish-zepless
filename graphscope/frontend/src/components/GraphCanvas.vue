@@ -7,9 +7,10 @@ const props = defineProps({
   edges: { type: Array, default: () => [] },
   scoreMap: { type: Object, default: () => ({}) },
   selectedNodeId: { type: String, default: null },
+  selectedEdgeId: { type: String, default: null },
 })
 
-const emit = defineEmits(['select-node'])
+const emit = defineEmits(['select-node', 'select-edge'])
 
 const containerRef = ref(null)
 let simulation
@@ -86,11 +87,9 @@ const legendCollapsed = ref(false)
 // ============== 节点尺寸 ==============
 
 const sizedNodes = computed(() => {
-  const values = Object.values(props.scoreMap)
-  const maxScore = values.length ? Math.max(...values) : 1
   return props.nodes.map((node) => ({
     ...node,
-    visualSize: 10 + ((props.scoreMap[node.id] || 0) / (maxScore || 1)) * 22,
+    visualSize: 12,
   }))
 })
 
@@ -116,9 +115,9 @@ function render() {
 
   // 点击空白处取消选中（关闭详情面板）
   svg.on('click', (event) => {
-    // 只在点击 SVG 背景时触发，点击节点不触发
     if (event.target.tagName === 'svg') {
       emit('select-node', null)
+      emit('select-edge', null)
     }
   })
 
@@ -131,14 +130,41 @@ function render() {
   const links = props.edges.map((edge) => ({ ...edge }))
   const nodes = sizedNodes.value.map((node) => ({ ...node }))
 
-  // 边
-  const link = zoomLayer
-    .append('g')
-    .attr('stroke', 'rgba(124, 145, 186, 0.35)')
-    .attr('stroke-width', 1)
-    .selectAll('line')
+  // 边（可见线条）
+  const linkGroup = zoomLayer.append('g')
+  const link = linkGroup
+    .selectAll('line.visible')
     .data(links)
     .join('line')
+    .classed('visible', true)
+    .attr('stroke', (d) => (d.id === props.selectedEdgeId ? '#60a5fa' : 'rgba(124, 145, 186, 0.35)'))
+    .attr('stroke-width', (d) => (d.id === props.selectedEdgeId ? 2.5 : 1))
+
+  // 边的透明点击区域（更宽，方便点击）
+  const linkHit = linkGroup
+    .selectAll('line.hitarea')
+    .data(links)
+    .join('line')
+    .classed('hitarea', true)
+    .attr('stroke', 'transparent')
+    .attr('stroke-width', 12)
+    .style('cursor', 'pointer')
+    .on('click', (event, d) => {
+      event.stopPropagation()
+      emit('select-edge', d)
+    })
+
+  // 边标签（关系名称）
+  const linkLabel = zoomLayer
+    .append('g')
+    .selectAll('text')
+    .data(links)
+    .join('text')
+    .text((d) => d.name || '')
+    .attr('fill', 'rgba(148, 163, 184, 0.6)')
+    .attr('font-size', 9)
+    .attr('text-anchor', 'middle')
+    .attr('pointer-events', 'none')
 
   // 节点组
   const node = zoomLayer
@@ -180,6 +206,16 @@ function render() {
         .attr('x2', (d) => d.target.x)
         .attr('y2', (d) => d.target.y)
 
+      linkHit
+        .attr('x1', (d) => d.source.x)
+        .attr('y1', (d) => d.source.y)
+        .attr('x2', (d) => d.target.x)
+        .attr('y2', (d) => d.target.y)
+
+      linkLabel
+        .attr('x', (d) => (d.source.x + d.target.x) / 2)
+        .attr('y', (d) => (d.source.y + d.target.y) / 2 - 4)
+
       node.attr('transform', (d) => `translate(${d.x},${d.y})`)
     })
 
@@ -214,26 +250,34 @@ function render() {
       }),
   )
 
-  // 保存 circles 引用，供选中状态更新用
+  // 保存引用，供选中状态更新用
   currentCircles = circles
   currentNodes = nodes
+  currentLinks = link
 }
 
 // 保存引用，用于更新选中高亮而不重新渲染整个图
 let currentCircles = null
 let currentNodes = null
+let currentLinks = null
 
 function updateSelection() {
-  if (!currentCircles) return
-  currentCircles
-    .attr('stroke', (d) => (d.id === props.selectedNodeId ? '#f8fafc' : '#0f172a'))
-    .attr('stroke-width', (d) => (d.id === props.selectedNodeId ? 3 : 1.2))
+  if (currentCircles) {
+    currentCircles
+      .attr('stroke', (d) => (d.id === props.selectedNodeId ? '#f8fafc' : '#0f172a'))
+      .attr('stroke-width', (d) => (d.id === props.selectedNodeId ? 3 : 1.2))
+  }
+  if (currentLinks) {
+    currentLinks
+      .attr('stroke', (d) => (d.id === props.selectedEdgeId ? '#60a5fa' : 'rgba(124, 145, 186, 0.35)'))
+      .attr('stroke-width', (d) => (d.id === props.selectedEdgeId ? 2.5 : 1))
+  }
 }
 
 // 数据变化时重新渲染
 watch(() => [props.nodes, props.edges, props.scoreMap], render, { deep: true })
-// 选中节点变化时只更新高亮，不重新布局
-watch(() => props.selectedNodeId, updateSelection)
+// 选中状态变化时只更新高亮，不重新布局
+watch(() => [props.selectedNodeId, props.selectedEdgeId], updateSelection)
 onMounted(render)
 onBeforeUnmount(() => simulation?.stop())
 

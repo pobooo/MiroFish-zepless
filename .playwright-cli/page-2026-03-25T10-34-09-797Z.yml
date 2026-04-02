@@ -1,0 +1,81 @@
+- main [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - paragraph [ref=e6]: Graph Analytics + GraphRAG Support
+      - heading "GraphScope" [level=1] [ref=e7]
+      - paragraph [ref=e8]: 连接 Graphiti / Neo4j 图谱，计算复杂网络指标，识别关键节点，并输出可直接供 Agent 使用的结构化上下文。
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]: 服务状态
+        - strong [ref=e12]: loading
+      - generic [ref=e13]:
+        - generic [ref=e14]: Neo4j
+        - strong [ref=e15]: disconnected
+  - generic [ref=e16]:
+    - generic [ref=e17]:
+      - generic [ref=e18]: Graph / Group ID
+      - textbox "Graph / Group ID" [ref=e19]:
+        - /placeholder: 留空读取默认图谱
+    - generic [ref=e20]:
+      - generic [ref=e21]: 指标视图
+      - combobox "指标视图" [ref=e22]:
+        - option "PageRank" [selected]
+        - option "Degree Centrality"
+        - option "Betweenness"
+        - option "Closeness"
+        - option "Eigenvector"
+    - generic [ref=e23]:
+      - generic [ref=e24]: 社区算法
+      - combobox "社区算法" [ref=e25]:
+        - option "Louvain" [selected]
+        - option "Label Propagation"
+    - generic [ref=e26]:
+      - generic [ref=e27]: Top K
+      - spinbutton "Top K" [ref=e28]: "10"
+    - button "刷新图谱" [ref=e29] [cursor=pointer]
+  - generic [ref=e30]:
+    - generic [ref=e31]:
+      - img [ref=e33]
+      - generic [ref=e34]:
+        - generic [ref=e35]:
+          - heading "节点详情" [level=2] [ref=e36]
+          - paragraph [ref=e37]: 选中节点的标签、摘要和原始属性
+        - generic [ref=e38]: 暂无节点数据
+    - generic [ref=e39]:
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - heading "网络指标" [level=2] [ref=e42]
+          - paragraph [ref=e43]: 面向结构分析和 GraphRAG 的全局视角
+        - generic [ref=e45]:
+          - heading "社区概览" [level=3] [ref=e46]
+          - generic [ref=e47]: 0 个社区
+      - generic [ref=e49]:
+        - generic [ref=e50]:
+          - heading "重要节点发现" [level=2] [ref=e51]
+          - paragraph [ref=e52]: 融合 PageRank、Betweenness、Degree 等指标
+        - generic [ref=e53]: Top 0
+      - generic [ref=e55]:
+        - generic [ref=e56]:
+          - heading "当前指标排行 · pagerank" [level=2] [ref=e57]
+          - paragraph [ref=e58]: 结构性最高的节点会在图中被放大
+        - generic [ref=e59]: Top 0
+  - generic [ref=e60]:
+    - generic [ref=e61]:
+      - generic [ref=e62]:
+        - generic [ref=e63]: GraphRAG 查询
+        - textbox "GraphRAG 查询" [ref=e64]:
+          - /placeholder: 例如：这个图谱中最关键的人物和跨社区桥节点是谁？
+          - text: 图谱中最关键的人物和桥接节点是谁？
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - generic [ref=e67]: 上下文策略
+          - combobox "上下文策略" [ref=e68]:
+            - option "community_aware" [selected]
+            - option "centrality_aware"
+            - option "path_aware"
+        - button "生成 GraphRAG 上下文" [ref=e69] [cursor=pointer]
+    - generic [ref=e70]:
+      - generic [ref=e71]:
+        - heading "GraphRAG 上下文" [level=2] [ref=e72]
+        - paragraph [ref=e73]: 面向 Agent / 报告生成的结构化上下文输出
+      - generic [ref=e74]: 输入查询后可生成可直接喂给 LLM 的图上下文。

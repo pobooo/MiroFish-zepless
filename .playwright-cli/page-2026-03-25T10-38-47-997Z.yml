@@ -1,0 +1,685 @@
+- main [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - paragraph [ref=e6]: Graph Analytics + GraphRAG Support
+      - heading "GraphScope" [level=1] [ref=e7]
+      - paragraph [ref=e8]: 连接 Graphiti / Neo4j 图谱，计算复杂网络指标，识别关键节点，并输出可直接供 Agent 使用的结构化上下文。
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]: 服务状态
+        - strong [ref=e12]: ok
+      - generic [ref=e13]:
+        - generic [ref=e14]: Neo4j
+        - strong [ref=e15]: connected
+  - generic [ref=e16]:
+    - generic [ref=e17]:
+      - generic [ref=e18]: Graph / Group ID
+      - textbox "Graph / Group ID" [ref=e19]:
+        - /placeholder: 留空读取默认图谱
+        - text: mirofish_cea0944be175405c
+    - generic [ref=e20]:
+      - generic [ref=e21]: 指标视图
+      - combobox "指标视图" [ref=e22]:
+        - option "PageRank" [selected]
+        - option "Degree Centrality"
+        - option "Betweenness"
+        - option "Closeness"
+        - option "Eigenvector"
+    - generic [ref=e23]:
+      - generic [ref=e24]: 社区算法
+      - combobox "社区算法" [ref=e25]:
+        - option "Louvain" [selected]
+        - option "Label Propagation"
+    - generic [ref=e26]:
+      - generic [ref=e27]: Top K
+      - spinbutton "Top K" [ref=e28]: "10"
+    - button "刷新图谱" [ref=e75] [cursor=pointer]
+  - generic [ref=e30]:
+    - generic [ref=e31]:
+      - img [ref=e76]:
+        - generic [ref=e86]:
+          - generic [ref=e89] [cursor=pointer]: Ethics争议
+          - generic [ref=e92] [cursor=pointer]: NurseTown
+          - generic [ref=e95] [cursor=pointer]: "-SR模型"
+          - generic [ref=e98] [cursor=pointer]: 0.8B模型
+          - generic [ref=e101] [cursor=pointer]: 100万token
+          - generic [ref=e104] [cursor=pointer]: 10Kh RealOmniOpen DataSet
+          - generic [ref=e107] [cursor=pointer]: 10K视频-问答对
+          - generic [ref=e110] [cursor=pointer]: 10bit色彩显示
+          - generic [ref=e113] [cursor=pointer]: 128K长上下文
+          - generic [ref=e116] [cursor=pointer]: 13家科技大厂
+          - generic [ref=e119] [cursor=pointer]: 2.5Turbo模型
+          - generic [ref=e122] [cursor=pointer]: 200 FPS高速运动4D模型
+          - generic [ref=e125] [cursor=pointer]: 2025 AI Agent Index报告
+          - generic [ref=e128] [cursor=pointer]: 2025中国移动互联网年度大报告
+          - generic [ref=e131] [cursor=pointer]: 2025全球AI应用行业年度报告
+          - generic [ref=e134] [cursor=pointer]: 2025年大语言模型年度回顾
+          - generic [ref=e137] [cursor=pointer]: 2025年度中国游戏产业年会
+          - generic [ref=e140] [cursor=pointer]: 2026人工智能十大趋势
+          - generic [ref=e143] [cursor=pointer]: 2026年
+          - generic [ref=e146] [cursor=pointer]: 2026游戏开发报告
+          - generic [ref=e149] [cursor=pointer]: 293B MoE稀疏架构
+          - generic [ref=e152] [cursor=pointer]: 2D Probing技
+          - generic [ref=e155] [cursor=pointer]: 2D图像
+          - generic [ref=e158] [cursor=pointer]: 3.0 Omni模型
+          - generic [ref=e161] [cursor=pointer]: 30 FPS低成本相机阵列
+          - generic [ref=e164] [cursor=pointer]: "3090"
+          - generic [ref=e167] [cursor=pointer]: 32K上下
+          - generic [ref=e170] [cursor=pointer]: "360"
+          - generic [ref=e173] [cursor=pointer]: 36氪
+          - generic [ref=e176] [cursor=pointer]: 36氪研究院
+          - generic [ref=e179] [cursor=pointer]: 38支参赛战队
+          - generic [ref=e182] [cursor=pointer]: 3A厂商
+          - generic [ref=e185] [cursor=pointer]: 3A开发成本
+          - generic [ref=e188] [cursor=pointer]: 3B Image Captioning
+          - generic [ref=e191] [cursor=pointer]: 3D
+          - generic [ref=e194] [cursor=pointer]: 3D AIGC平台
+          - generic [ref=e197] [cursor=pointer]: 3D-GENERALIST模型
+          - generic [ref=e200] [cursor=pointer]: 3DGS
+          - generic [ref=e203] [cursor=pointer]: 3DGS挑战赛
+          - generic [ref=e206] [cursor=pointer]: 3D世界
+          - generic [ref=e209] [cursor=pointer]: 3D世界图像
+          - generic [ref=e212] [cursor=pointer]: 3D世界构建技术
+          - generic [ref=e215] [cursor=pointer]: 3D世界构建效率
+          - generic [ref=e218] [cursor=pointer]: 3D乙游
+          - generic [ref=e221] [cursor=pointer]: 3D乙游《代号Sol》
+          - generic [ref=e224] [cursor=pointer]: 3D二次元AI伴侣
+          - generic [ref=e227] [cursor=pointer]: 3D内容生产行业
+          - generic [ref=e230] [cursor=pointer]: 3D几何一致性
+          - generic [ref=e233] [cursor=pointer]: 3D创作
+          - generic [ref=e236] [cursor=pointer]: 3D动画制作成本
+          - generic [ref=e239] [cursor=pointer]: 3D动画制作门槛
+          - generic [ref=e242] [cursor=pointer]: 3D动画生成领域
+          - generic [ref=e245] [cursor=pointer]: 3D场景
+          - generic [ref=e248] [cursor=pointer]: 3D堆叠技术
+          - generic [ref=e251] [cursor=pointer]: 3D建模工具
+          - generic [ref=e254] [cursor=pointer]: 3D建模技术
+          - generic [ref=e257] [cursor=pointer]: 3D打印
+          - generic [ref=e260] [cursor=pointer]: 3D时代的Photoshop
+          - generic [ref=e263] [cursor=pointer]: 3D模型
+          - generic [ref=e266] [cursor=pointer]: 3D点云
+          - generic [ref=e269] [cursor=pointer]: 3D点云导出功能
+          - generic [ref=e272] [cursor=pointer]: 3D点云跟踪任务
+          - generic [ref=e275] [cursor=pointer]: 3D生成技术公司VAST
+          - generic [ref=e278] [cursor=pointer]: 3D生成模型
+          - generic [ref=e281] [cursor=pointer]: 3D空间感知
+          - generic [ref=e284] [cursor=pointer]: 3D艺术
+          - generic [ref=e287] [cursor=pointer]: 3D虚拟世界
+          - generic [ref=e290] [cursor=pointer]: 3D表征
+          - generic [ref=e293] [cursor=pointer]: 3D视觉
+          - generic [ref=e296] [cursor=pointer]: 3D视觉技术
+          - generic [ref=e299] [cursor=pointer]: 3D视觉预测
+          - generic [ref=e302] [cursor=pointer]: 3D角色动画创作
+          - generic [ref=e305] [cursor=pointer]: 3D资产
+          - generic [ref=e308] [cursor=pointer]: 3D高斯表示
+          - generic [ref=e311] [cursor=pointer]: 40B参数
+          - generic [ref=e314] [cursor=pointer]: 4D Gaussian
+          - generic [ref=e317] [cursor=pointer]: 4DGS
+          - generic [ref=e320] [cursor=pointer]: 4DSloMo方法
+          - generic [ref=e323] [cursor=pointer]: 4D世界模型
+          - generic [ref=e326] [cursor=pointer]: 4D创作功能
+          - generic [ref=e329] [cursor=pointer]: 4D动态场景建模与生成
+          - generic [ref=e332] [cursor=pointer]: 4D动态重建技术
+          - generic [ref=e335] [cursor=pointer]: 4D场景重建
+          - generic [ref=e338] [cursor=pointer]: 4D方向盘
+          - generic [ref=e341] [cursor=pointer]: 4D生成与重建框架
+          - generic [ref=e344] [cursor=pointer]: 4D重建
+          - generic [ref=e347] [cursor=pointer]: 4K图像生成
+          - generic [ref=e350] [cursor=pointer]: 4K竖屏视频原生输出
+          - generic [ref=e353] [cursor=pointer]: 512维
+          - generic [ref=e356] [cursor=pointer]: 576×1024@24fps
+          - generic [ref=e359] [cursor=pointer]: 5分钟级高保真视频
+          - generic [ref=e362] [cursor=pointer]: 70B模型
+          - generic [ref=e365] [cursor=pointer]: 7500帧长程时序连贯性
+          - generic [ref=e368] [cursor=pointer]: 7B Dense
+          - generic [ref=e371] [cursor=pointer]: 7B参数奖励模型
+          - generic [ref=e374] [cursor=pointer]: 7B参数模型
+          - generic [ref=e377] [cursor=pointer]: 7×24h「全职AI员工」
+          - generic [ref=e380] [cursor=pointer]: 80B MoE
+          - generic [ref=e383] [cursor=pointer]: 80B参数
+          - generic [ref=e386] [cursor=pointer]: 8B参数量
+          - generic [ref=e389] [cursor=pointer]: 8B模型
+          - generic [ref=e392] [cursor=pointer]: 9B模型
+          - generic [ref=e395] [cursor=pointer]: A/F分离
+          - generic [ref=e398] [cursor=pointer]: A800 GPU
+          - generic [ref=e401] [cursor=pointer]: AAAI 2026
+          - generic [ref=e404] [cursor=pointer]: AAAI 2026 Oral
+          - generic [ref=e407] [cursor=pointer]: ACEBench
+          - generic [ref=e410] [cursor=pointer]: ACE技术
+          - generic [ref=e413] [cursor=pointer]: ACM SIGGRAPH Asia 2025
+          - generic [ref=e416] [cursor=pointer]: ACMMM 2025
+          - generic [ref=e419] [cursor=pointer]: ADRBench
+          - generic [ref=e422] [cursor=pointer]: AES
+          - generic [ref=e425] [cursor=pointer]: AGI
+          - generic [ref=e428] [cursor=pointer]: AGI
+          - generic [ref=e431] [cursor=pointer]: AGI-Next峰会
+          - generic [ref=e434] [cursor=pointer]: AGI技术突破预测
+          - generic [ref=e437] [cursor=pointer]: AGI生态
+          - generic [ref=e440] [cursor=pointer]: AI
+          - generic [ref=e443] [cursor=pointer]: AI
+          - generic [ref=e446] [cursor=pointer]: AI 100榜单
+          - generic [ref=e449] [cursor=pointer]: AI 2.0时代
+          - generic [ref=e452] [cursor=pointer]: AI Agent
+          - generic [ref=e455] [cursor=pointer]: AI AgentNavos
+          - generic [ref=e458] [cursor=pointer]: AI Arena
+          - generic [ref=e461] [cursor=pointer]: AI Clone长期记忆基准
+          - generic [ref=e464] [cursor=pointer]: AI Data部
+          - generic [ref=e467] [cursor=pointer]: AI Graph
+          - generic [ref=e470] [cursor=pointer]: AI Infra Summit
+          - generic [ref=e473] [cursor=pointer]: AI PC
+          - generic [ref=e476] [cursor=pointer]: AI Ping
+          - generic [ref=e479] [cursor=pointer]: AI Plus
+          - generic [ref=e482] [cursor=pointer]: AI Slop
+          - generic [ref=e485] [cursor=pointer]: AI Solution
+          - generic [ref=e488] [cursor=pointer]: AI for Science
+          - generic [ref=e491] [cursor=pointer]: AI+3D内容生成
+          - generic [ref=e494] [cursor=pointer]: AI+人类审核机制
+          - generic [ref=e497] [cursor=pointer]: AI+游戏解决方案
+          - generic [ref=e500] [cursor=pointer]: AI-XR Scientist
+          - generic [ref=e503] [cursor=pointer]: AI2U
+          - generic [ref=e506] [cursor=pointer]: AI4
+          - generic [ref=e509] [cursor=pointer]: AI4S智能体CNS挑战赛
+          - generic [ref=e512] [cursor=pointer]: AI5芯片
+          - generic [ref=e515] [cursor=pointer]: AI6芯片
+          - generic [ref=e518] [cursor=pointer]: AI9
+          - generic [ref=e521] [cursor=pointer]: AIGC
+          - generic [ref=e524] [cursor=pointer]: AIGC应用
+          - generic [ref=e527] [cursor=pointer]: AIME 2025
+          - generic [ref=e530] [cursor=pointer]: AIME数学竞赛
+          - generic [ref=e533] [cursor=pointer]: AIReady数字孪生引擎
+          - generic [ref=e536] [cursor=pointer]: AIUI开放平台
+          - generic [ref=e539] [cursor=pointer]: AInative Workspace
+          - generic [ref=e542] [cursor=pointer]: AI上下文存储能力
+          - generic [ref=e545] [cursor=pointer]: AI主美
+          - generic [ref=e548] [cursor=pointer]: AI乙游
+          - generic [ref=e551] [cursor=pointer]: AI乙游市场
+          - generic [ref=e554] [cursor=pointer]: AI九巨头
+          - generic [ref=e557] [cursor=pointer]: AI二创
+          - generic [ref=e560] [cursor=pointer]: AI云
+          - generic [ref=e563] [cursor=pointer]: AI互动编辑笔记
+          - generic [ref=e566] [cursor=pointer]: AI交互智能
+          - generic [ref=e569] [cursor=pointer]: AI产业链
+          - generic [ref=e572] [cursor=pointer]: AI产品Manus
+          - generic [ref=e575] [cursor=pointer]: AI人才培养
+          - generic [ref=e578] [cursor=pointer]: AI人才狙击队
+          - generic [ref=e581] [cursor=pointer]: AI代码质量管控
+          - generic [ref=e584] [cursor=pointer]: AI任天堂
+          - generic [ref=e587] [cursor=pointer]: AI会议纪要
+          - generic [ref=e590] [cursor=pointer]: AI伦理治理
+          - generic [ref=e593] [cursor=pointer]: AI伪人Mimesis
+          - generic [ref=e596] [cursor=pointer]: AI伴侣
+          - generic [ref=e599] [cursor=pointer]: AI伴侣《无限谷》
+          - generic [ref=e602] [cursor=pointer]: AI体感交互
+          - generic [ref=e605] [cursor=pointer]: AI全流程开发
+          - generic [ref=e608] [cursor=pointer]: AI共创模式
+          - generic [ref=e611] [cursor=pointer]: AI共创模式
+          - generic [ref=e614] [cursor=pointer]: AI共创营
+          - generic [ref=e617] [cursor=pointer]: AI内容创作
+          - generic [ref=e620] [cursor=pointer]: AI内容披露机制
+          - generic [ref=e623] [cursor=pointer]: AI内容生态
+          - generic [ref=e626] [cursor=pointer]: AI创世纪计划
+          - generic [ref=e629] [cursor=pointer]: AI创作
+          - generic [ref=e632] [cursor=pointer]: AI创作工具
+          - generic [ref=e635] [cursor=pointer]: AI创作社区
+          - generic [ref=e638] [cursor=pointer]: AI创新院
+          - generic [ref=e641] [cursor=pointer]: AI办公
+          - generic [ref=e644] [cursor=pointer]: AI办公工具
+          - generic [ref=e647] [cursor=pointer]: AI办公应用
+          - generic [ref=e650] [cursor=pointer]: AI功能
+          - generic [ref=e653] [cursor=pointer]: AI加速科学发现
+          - generic [ref=e656] [cursor=pointer]: AI动态HDR技术
+          - generic [ref=e659] [cursor=pointer]: AI助力独立游戏开发，工具还是威胁？
+          - generic [ref=e662] [cursor=pointer]: AI助手
+          - generic [ref=e665] [cursor=pointer]: AI协作设计新准则
+          - generic [ref=e668] [cursor=pointer]: AI原生
+          - generic [ref=e671] [cursor=pointer]: AI原生6G协议
+          - generic [ref=e674] [cursor=pointer]: AI原生APP
+          - generic [ref=e677] [cursor=pointer]: AI原生工作台
+          - generic [ref=e680] [cursor=pointer]: AI原生工作流
+          - generic [ref=e683] [cursor=pointer]: AI原生开发平台
+          - generic [ref=e686] [cursor=pointer]: AI原生游戏
+          - generic [ref=e689] [cursor=pointer]: AI原生玩法
+          - generic [ref=e692] [cursor=pointer]: AI叙事引擎
+          - generic [ref=e695] [cursor=pointer]: AI合成语音
+          - generic [ref=e698] [cursor=pointer]: AI吉他
+          - generic [ref=e701] [cursor=pointer]: AI听记
+          - generic [ref=e704] [cursor=pointer]: AI员工
+          - generic [ref=e707] [cursor=pointer]: AI和机器人
+          - generic [ref=e710] [cursor=pointer]: AI团队
+          - generic [ref=e713] [cursor=pointer]: AI图像生成
+          - generic [ref=e716] [cursor=pointer]: AI图像生成领域
+          - generic [ref=e719] [cursor=pointer]: AI圈
+          - generic [ref=e722] [cursor=pointer]: AI地牢
+          - generic [ref=e725] [cursor=pointer]: AI基础设施
+          - generic [ref=e728] [cursor=pointer]: AI外挂
+          - generic [ref=e731] [cursor=pointer]: AI多人有声剧
+          - generic [ref=e734] [cursor=pointer]: AI大厨炼金师系统
+          - generic [ref=e737] [cursor=pointer]: AI大模型
+          - generic [ref=e740] [cursor=pointer]: AI大规模生成游戏攻略
+          - generic [ref=e743] [cursor=pointer]: AI头部企业
+          - generic [ref=e746] [cursor=pointer]: AI奥运会
+          - generic [ref=e749] [cursor=pointer]: AI女友
+          - generic [ref=e752] [cursor=pointer]: AI委员会
+          - generic [ref=e755] [cursor=pointer]: AI学者
+          - generic [ref=e758] [cursor=pointer]: AI安全技术
+          - generic [ref=e761] [cursor=pointer]: AI安全研究
+          - generic [ref=e764] [cursor=pointer]: AI安全领域
+          - generic [ref=e767] [cursor=pointer]: AI小程序成长计划
+          - generic [ref=e770] [cursor=pointer]: AI工业化生产
+          - generic [ref=e773] [cursor=pointer]: AI工具
+          - generic [ref=e776] [cursor=pointer]: AI工具
+          - generic [ref=e779] [cursor=pointer]: AI工具应用
+          - generic [ref=e782] [cursor=pointer]: AI工具整合平台
+          - generic [ref=e785] [cursor=pointer]: AI工具进化引擎
+          - generic [ref=e788] [cursor=pointer]: AI工具链
+          - generic [ref=e791] [cursor=pointer]: AI工厂设计Omniverse DSX
+          - generic [ref=e794] [cursor=pointer]: AI平台CEO
+          - generic [ref=e797] [cursor=pointer]: AI幻觉
+          - generic [ref=e800] [cursor=pointer]: AI广告系统
+          - generic [ref=e803] [cursor=pointer]: AI应用
+          - generic [ref=e806] [cursor=pointer]: AI应用及工具类小程序
+          - generic [ref=e809] [cursor=pointer]: AI应用生态
+          - generic [ref=e812] [cursor=pointer]: AI建筑师特工队
+          - generic [ref=e815] [cursor=pointer]: AI开发助手Aura
+          - generic [ref=e818] [cursor=pointer]: AI开发者
+          - generic [ref=e821] [cursor=pointer]: AI情感羁绊技术
+          - generic [ref=e824] [cursor=pointer]: AI战略布局
+          - generic [ref=e827] [cursor=pointer]: AI手指难题
+          - generic [ref=e830] [cursor=pointer]: AI技术
+          - generic [ref=e833] [cursor=pointer]: AI技术发展趋势
+          - generic [ref=e836] [cursor=pointer]: AI技术突破与产品升级
+          - generic [ref=e839] [cursor=pointer]: AI技能商店
+          - generic [ref=e842] [cursor=pointer]: AI推理
+          - generic [ref=e845] [cursor=pointer]: AI推理研究
+          - generic [ref=e848] [cursor=pointer]: AI提示工程
+          - generic [ref=e851] [cursor=pointer]: AI插件
+          - generic [ref=e854] [cursor=pointer]: AI搜索市场
+          - generic [ref=e857] [cursor=pointer]: AI播客
+          - generic [ref=e860] [cursor=pointer]: AI政治人格系统
+          - generic [ref=e863] [cursor=pointer]: AI教练GameSkill
+          - generic [ref=e866] [cursor=pointer]: AI数学证明
+          - generic [ref=e869] [cursor=pointer]: AI文游
+          - generic [ref=e872] [cursor=pointer]: AI日常应用
+          - generic [ref=e875] [cursor=pointer]: AI时代世界创作的基础设施
+          - generic [ref=e878] [cursor=pointer]: AI时代独立游戏开发
+          - generic [ref=e881] [cursor=pointer]: AI智能体
+          - generic [ref=e884] [cursor=pointer]: AI智能体军团
+          - generic [ref=e887] [cursor=pointer]: AI智能体技术
+          - generic [ref=e890] [cursor=pointer]: AI模型
+          - generic [ref=e893] [cursor=pointer]: AI模型优化
+          - generic [ref=e896] [cursor=pointer]: AI模型底层架构
+          - generic [ref=e899] [cursor=pointer]: AI模型能力跃升与多领域应用扩展
+          - generic [ref=e902] [cursor=pointer]: AI模型训练
+          - generic [ref=e905] [cursor=pointer]: AI游戏
+          - generic [ref=e908] [cursor=pointer]: AI游戏伴侣
+          - generic [ref=e911] [cursor=pointer]: AI游戏助手GameBoss
+          - generic [ref=e914] [cursor=pointer]: AI游戏测试平台Game Arena
+          - generic [ref=e917] [cursor=pointer]: AI游戏的空间新方向：探索无限可能的森盒
+          - generic [ref=e920] [cursor=pointer]: AI漫剧
+          - generic [ref=e923] [cursor=pointer]: AI漫剧市场
+          - generic [ref=e926] [cursor=pointer]: AI漫剧赛道
+          - generic [ref=e929] [cursor=pointer]: AI爱好者
+          - generic [ref=e932] [cursor=pointer]: AI狼人杀
+          - generic [ref=e935] [cursor=pointer]: AI生成NPC对话
+          - generic [ref=e938] [cursor=pointer]: AI生成代码
+          - generic [ref=e941] [cursor=pointer]: AI生成内容
+          - generic [ref=e944] [cursor=pointer]: AI生成技术
+          - generic [ref=e947] [cursor=pointer]: AI生成游戏
+          - generic [ref=e950] [cursor=pointer]: AI生成的轻互动内容
+          - generic [ref=e953] [cursor=pointer]: AI生成空间游戏
+          - generic [ref=e956] [cursor=pointer]: AI生成视频
+          - generic [ref=e959] [cursor=pointer]: AI生成论文
+          - generic [ref=e962] [cursor=pointer]: AI电动汽车
+          - generic [ref=e965] [cursor=pointer]: AI电影制作
+          - generic [ref=e968] [cursor=pointer]: AI监管
+          - generic [ref=e971] [cursor=pointer]: AI眼镜
+          - generic [ref=e974] [cursor=pointer]: AI短剧
+          - generic [ref=e977] [cursor=pointer]: AI短视频平台
+          - generic [ref=e980] [cursor=pointer]: AI短视频生成技术
+          - generic [ref=e983] [cursor=pointer]: AI研发
+          - generic [ref=e986] [cursor=pointer]: AI研究团队
+          - generic [ref=e989] [cursor=pointer]: AI研究效率
+          - generic [ref=e992] [cursor=pointer]: AI硬件市场
+          - generic [ref=e995] [cursor=pointer]: AI硬件设备
+          - generic [ref=e998] [cursor=pointer]: AI硬科技
+          - generic [ref=e1001] [cursor=pointer]: AI社交赛道
+          - generic [ref=e1004] [cursor=pointer]: AI社交陪伴类项目
+          - generic [ref=e1007] [cursor=pointer]: AI神器
+          - generic [ref=e1010] [cursor=pointer]: AI算力中心
+          - generic [ref=e1013] [cursor=pointer]: AI算力需求
+          - generic [ref=e1016] [cursor=pointer]: AI算法
+          - generic [ref=e1019] [cursor=pointer]: AI系统
+          - generic [ref=e1022] [cursor=pointer]: AI素材
+          - generic [ref=e1025] [cursor=pointer]: AI红包大战
+          - generic [ref=e1028] [cursor=pointer]: AI经济
+          - generic [ref=e1031] [cursor=pointer]: AI绘画技术
+          - generic [ref=e1034] [cursor=pointer]: AI编程
+          - generic [ref=e1037] [cursor=pointer]: AI编程工具
+          - generic [ref=e1040] [cursor=pointer]: AI编程工具CodeBuddy Code 2.0
+          - generic [ref=e1043] [cursor=pointer]: AI编程工具市场
+          - generic [ref=e1046] [cursor=pointer]: AI编程指挥中心
+          - generic [ref=e1049] [cursor=pointer]: AI编程项目
+          - generic [ref=e1052] [cursor=pointer]: AI美术工程师
+          - generic [ref=e1055] [cursor=pointer]: AI群体智能
+          - generic [ref=e1058] [cursor=pointer]: AI聊天机器人
+          - generic [ref=e1061] [cursor=pointer]: AI聊天机器人
+          - generic [ref=e1064] [cursor=pointer]: AI聊天过滤技术
+          - generic [ref=e1067] [cursor=pointer]: AI能力
+          - generic [ref=e1070] [cursor=pointer]: AI自动任务分解与交付技术
+          - generic [ref=e1073] [cursor=pointer]: AI芯片
+          - generic [ref=e1076] [cursor=pointer]: AI芯片竞争格局
+          - generic [ref=e1079] [cursor=pointer]: AI营销企业
+          - generic [ref=e1082] [cursor=pointer]: AI营销视频制作
+          - generic [ref=e1085] [cursor=pointer]: AI落地
+          - generic [ref=e1088] [cursor=pointer]: AI行业
+          - generic [ref=e1091] [cursor=pointer]: AI行业巨头
+          - generic [ref=e1094] [cursor=pointer]: AI行业技术突破与算力布局战略
+          - generic [ref=e1097] [cursor=pointer]: AI行业融资
+          - generic [ref=e1100] [cursor=pointer]: AI行业融资与算力竞赛
+          - generic [ref=e1103] [cursor=pointer]: AI视觉创作
+          - generic [ref=e1106] [cursor=pointer]: AI视频
+          - generic [ref=e1109] [cursor=pointer]: AI视频创作
+          - generic [ref=e1112] [cursor=pointer]: AI视频格局
+          - generic [ref=e1115] [cursor=pointer]: AI视频生产
+          - generic [ref=e1118] [cursor=pointer]: AI视频生成
+          - generic [ref=e1121] [cursor=pointer]: AI视频生成工具
+          - generic [ref=e1124] [cursor=pointer]: AI视频生成技术
+          - generic [ref=e1127] [cursor=pointer]: AI视频生成挑战赛
+          - generic [ref=e1130] [cursor=pointer]: AI视频生成模型
+          - generic [ref=e1133] [cursor=pointer]: AI视频生成流程
+          - generic [ref=e1136] [cursor=pointer]: AI视频生成领域
+          - generic [ref=e1139] [cursor=pointer]: AI解析音乐结构与歌词生成分镜脚本
+          - generic [ref=e1142] [cursor=pointer]: AI计算
+          - generic [ref=e1145] [cursor=pointer]: AI训练师
+          - generic [ref=e1148] [cursor=pointer]: AI训练集群
+          - generic [ref=e1151] [cursor=pointer]: AI语音
+          - generic [ref=e1154] [cursor=pointer]: AI语音新星
+          - generic [ref=e1157] [cursor=pointer]: AI负责人
+          - generic [ref=e1160] [cursor=pointer]: AI超级
+          - generic [ref=e1163] [cursor=pointer]: AI超级入口
+          - generic [ref=e1166] [cursor=pointer]: AI跑团网页小游戏
+          - generic [ref=e1169] [cursor=pointer]: AI软件行业
+          - generic [ref=e1172] [cursor=pointer]: AI辅助创作
+          - generic [ref=e1175] [cursor=pointer]: AI辅助学术创作
+          - generic [ref=e1178] [cursor=pointer]: AI辅助开发
+          - generic [ref=e1181] [cursor=pointer]: AI辅助编程工具
+          - generic [ref=e1184] [cursor=pointer]: AI辅助诊断
+          - generic [ref=e1187] [cursor=pointer]: AI边看、边听、边说的实时多模态交互
+          - generic [ref=e1190] [cursor=pointer]: AI配音
+          - generic [ref=e1193] [cursor=pointer]: AI重构游戏叙事范式
+          - generic [ref=e1196] [cursor=pointer]: AI队友
+          - generic [ref=e1199] [cursor=pointer]: AI降本增效优势
+          - generic [ref=e1202] [cursor=pointer]: AI陪伴互动产品
+          - generic [ref=e1205] [cursor=pointer]: AI预训练范式
+          - generic [ref=e1208] [cursor=pointer]: AI领域
+          - generic [ref=e1211] [cursor=pointer]: AI驱动内容生成
+          - generic [ref=e1214] [cursor=pointer]: AI驱动游戏应用增长峰会
+          - generic [ref=e1217] [cursor=pointer]: AI驱动的沉浸式环境
+          - generic [ref=e1220] [cursor=pointer]: AI驱动的游戏开发工具
+          - generic [ref=e1223] [cursor=pointer]: AI驱动的科研平台
+          - generic [ref=e1226] [cursor=pointer]: AI龙虾教徒
+          - generic [ref=e1229] [cursor=pointer]: ALFWorld环境
+          - generic [ref=e1232] [cursor=pointer]: ALOHA
+          - generic [ref=e1235] [cursor=pointer]: ALS4级风险
+          - generic [ref=e1238] [cursor=pointer]: AMD
+          - generic [ref=e1241] [cursor=pointer]: AMD Instinct GPU
+          - generic [ref=e1244] [cursor=pointer]: AMD股价
+          - generic [ref=e1247] [cursor=pointer]: AMI Labs
+          - generic [ref=e1250] [cursor=pointer]: AMLA算子优化技术
+          - generic [ref=e1253] [cursor=pointer]: API
+          - generic [ref=e1256] [cursor=pointer]: API协议
+          - generic [ref=e1259] [cursor=pointer]: API开放平台
+          - generic [ref=e1262] [cursor=pointer]: API服务
+          - generic [ref=e1265] [cursor=pointer]: AR/VR
+          - generic [ref=e1268] [cursor=pointer]: AR3DR1团队
+          - generic [ref=e1271] [cursor=pointer]: ARC-AGI2测试
+          - generic [ref=e1274] [cursor=pointer]: ARK Invest
+          - generic [ref=e1277] [cursor=pointer]: ARTEMIS框架
+          - generic [ref=e1280] [cursor=pointer]: ASI
+          - generic [ref=e1283] [cursor=pointer]: ASRTTS技术
+          - generic [ref=e1286] [cursor=pointer]: AWS
+      - generic [ref=e34]:
+        - generic [ref=e35]:
+          - heading "节点详情" [level=2] [ref=e36]
+          - paragraph [ref=e37]: 选中节点的标签、摘要和原始属性
+        - generic [ref=e1287]:
+          - generic [ref=e1288]:
+            - strong [ref=e1289]: Ethics争议
+            - paragraph [ref=e1290]: Entity
+          - paragraph [ref=e1291]: AI技术在独立电影制作行业引发伦理争议，同时带来效率提升与创作模式的变革。
+          - generic [ref=e1292]: "{ \"summary\": \"AI技术在独立电影制作行业引发伦理争议，同时带来效率提升与创作模式的变革。\", \"group_id\": \"mirofish_cea0944be175405c\", \"name\": \" Ethics争议\", \"created_at\": \"2026-03-12T14:06:20.553293000+00:00\", \"uuid\": \"aac7bd5c-d85f-4105-822b-9110a9d5d104\", \"labels\": [ \"Entity\" ] }"
+    - generic [ref=e39]:
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - heading "网络指标" [level=2] [ref=e42]
+          - paragraph [ref=e43]: 面向结构分析和 GraphRAG 的全局视角
+        - generic [ref=e1293]:
+          - article [ref=e1294]:
+            - generic [ref=e1295]: 节点数
+            - strong [ref=e1296]: 4,088
+          - article [ref=e1297]:
+            - generic [ref=e1298]: 边数
+            - strong [ref=e1299]: 3,922
+          - article [ref=e1300]:
+            - generic [ref=e1301]: 网络密度
+            - strong [ref=e1302]: "0.0002"
+          - article [ref=e1303]:
+            - generic [ref=e1304]: 平均度
+            - strong [ref=e1305]: "1.8826"
+          - article [ref=e1306]:
+            - generic [ref=e1307]: 平均聚类系数
+            - strong [ref=e1308]: "0.0572"
+          - article [ref=e1309]:
+            - generic [ref=e1310]: 最大连通子图
+            - strong [ref=e1311]: 2,610
+          - article [ref=e1312]:
+            - generic [ref=e1313]: 平均最短路径
+            - strong [ref=e1314]: "5.9649"
+          - article [ref=e1315]:
+            - generic [ref=e1316]: 桥边数量
+            - strong [ref=e1317]: 1,922
+        - generic [ref=e44]:
+          - generic [ref=e45]:
+            - heading "社区概览" [level=3] [ref=e46]
+            - generic [ref=e47]: 1198 个社区
+          - generic [ref=e1318]:
+            - article [ref=e1319]:
+              - generic [ref=e1320]:
+                - strong [ref=e1321]: 社区 986
+                - paragraph [ref=e1322]: 规模 183 · 密度 0.0129
+              - text: AI、AI技术、游戏开发
+            - article [ref=e1323]:
+              - generic [ref=e1324]:
+                - strong [ref=e1325]: 社区 360
+                - paragraph [ref=e1326]: 规模 153 · 密度 0.0157
+              - text: OpenAI、GitHub、ChatGPT
+            - article [ref=e1327]:
+              - generic [ref=e1328]:
+                - strong [ref=e1329]: 社区 219
+                - paragraph [ref=e1330]: 规模 137 · 密度 0.0158
+              - text: Vibe Coding、AI编程、文字游戏
+            - article [ref=e1331]:
+              - generic [ref=e1332]:
+                - strong [ref=e1333]: 社区 396
+                - paragraph [ref=e1334]: 规模 124 · 密度 0.0197
+              - text: LLM强化学习不稳定之谜、英伟达H20、Hugging Face
+      - generic [ref=e48]:
+        - generic [ref=e49]:
+          - generic [ref=e50]:
+            - heading "重要节点发现" [level=2] [ref=e51]
+            - paragraph [ref=e52]: 融合 PageRank、Betweenness、Degree 等指标
+          - generic [ref=e53]: Top 10
+        - generic [ref=e1335]:
+          - button "1 AI Entity 5.735481" [ref=e1336] [cursor=pointer]:
+            - generic [ref=e1337]:
+              - generic [ref=e1338]: "1"
+              - generic [ref=e1339]:
+                - strong [ref=e1340]: AI
+                - text: Entity
+            - generic [ref=e1341]: "5.735481"
+          - button "2 OpenAI Entity 4.740197" [ref=e1342] [cursor=pointer]:
+            - generic [ref=e1343]:
+              - generic [ref=e1344]: "2"
+              - generic [ref=e1345]:
+                - strong [ref=e1346]: OpenAI
+                - text: Entity
+            - generic [ref=e1347]: "4.740197"
+          - button "3 谷歌 Entity 3.448502" [ref=e1348] [cursor=pointer]:
+            - generic [ref=e1349]:
+              - generic [ref=e1350]: "3"
+              - generic [ref=e1351]:
+                - strong [ref=e1352]: 谷歌
+                - text: Entity
+            - generic [ref=e1353]: "3.448502"
+          - button "4 英伟达 Entity 2.869057" [ref=e1354] [cursor=pointer]:
+            - generic [ref=e1355]:
+              - generic [ref=e1356]: "4"
+              - generic [ref=e1357]:
+                - strong [ref=e1358]: 英伟达
+                - text: Entity
+            - generic [ref=e1359]: "2.869057"
+          - button "5 AGI Entity 2.737655" [ref=e1360] [cursor=pointer]:
+            - generic [ref=e1361]:
+              - generic [ref=e1362]: "5"
+              - generic [ref=e1363]:
+                - strong [ref=e1364]: AGI
+                - text: Entity
+            - generic [ref=e1365]: "2.737655"
+          - button "6 Anthropic Entity 2.726068" [ref=e1366] [cursor=pointer]:
+            - generic [ref=e1367]:
+              - generic [ref=e1368]: "6"
+              - generic [ref=e1369]:
+                - strong [ref=e1370]: Anthropic
+                - text: Entity
+            - generic [ref=e1371]: "2.726068"
+          - button "7 AI技术 Entity 2.566896" [ref=e1372] [cursor=pointer]:
+            - generic [ref=e1373]:
+              - generic [ref=e1374]: "7"
+              - generic [ref=e1375]:
+                - strong [ref=e1376]: AI技术
+                - text: Entity
+            - generic [ref=e1377]: "2.566896"
+          - button "8 游戏行业 Entity 2.546895" [ref=e1378] [cursor=pointer]:
+            - generic [ref=e1379]:
+              - generic [ref=e1380]: "8"
+              - generic [ref=e1381]:
+                - strong [ref=e1382]: 游戏行业
+                - text: Entity
+            - generic [ref=e1383]: "2.546895"
+          - button "9 Transformer Entity 2.42958" [ref=e1384] [cursor=pointer]:
+            - generic [ref=e1385]:
+              - generic [ref=e1386]: "9"
+              - generic [ref=e1387]:
+                - strong [ref=e1388]: Transformer
+                - text: Entity
+            - generic [ref=e1389]: "2.42958"
+          - button "10 OpenClaw Entity 2.417197" [ref=e1390] [cursor=pointer]:
+            - generic [ref=e1391]:
+              - generic [ref=e1392]: "10"
+              - generic [ref=e1393]:
+                - strong [ref=e1394]: OpenClaw
+                - text: Entity
+            - generic [ref=e1395]: "2.417197"
+      - generic [ref=e54]:
+        - generic [ref=e55]:
+          - generic [ref=e56]:
+            - heading "当前指标排行 · pagerank" [level=2] [ref=e57]
+            - paragraph [ref=e58]: 结构性最高的节点会在图中被放大
+          - generic [ref=e59]: Top 10
+        - generic [ref=e1396]:
+          - button "1 AI Entity 0.008124" [ref=e1397] [cursor=pointer]:
+            - generic [ref=e1398]:
+              - generic [ref=e1399]: "1"
+              - generic [ref=e1400]:
+                - strong [ref=e1401]: AI
+                - text: Entity
+            - generic [ref=e1402]: "0.008124"
+          - button "2 OpenAI Entity 0.004094" [ref=e1403] [cursor=pointer]:
+            - generic [ref=e1404]:
+              - generic [ref=e1405]: "2"
+              - generic [ref=e1406]:
+                - strong [ref=e1407]: OpenAI
+                - text: Entity
+            - generic [ref=e1408]: "0.004094"
+          - button "3 AGI Entity 0.002687" [ref=e1409] [cursor=pointer]:
+            - generic [ref=e1410]:
+              - generic [ref=e1411]: "3"
+              - generic [ref=e1412]:
+                - strong [ref=e1413]: AGI
+                - text: Entity
+            - generic [ref=e1414]: "0.002687"
+          - button "4 DeepSeekR1 Entity 0.002663" [ref=e1415] [cursor=pointer]:
+            - generic [ref=e1416]:
+              - generic [ref=e1417]: "4"
+              - generic [ref=e1418]:
+                - strong [ref=e1419]: DeepSeekR1
+                - text: Entity
+            - generic [ref=e1420]: "0.002663"
+          - button "5 多智能体模拟 Entity 0.002638" [ref=e1421] [cursor=pointer]:
+            - generic [ref=e1422]:
+              - generic [ref=e1423]: "5"
+              - generic [ref=e1424]:
+                - strong [ref=e1425]: 多智能体模拟
+                - text: Entity
+            - generic [ref=e1426]: "0.002638"
+          - button "6 Smallville模拟小镇 Entity 0.002291" [ref=e1427] [cursor=pointer]:
+            - generic [ref=e1428]:
+              - generic [ref=e1429]: "6"
+              - generic [ref=e1430]:
+                - strong [ref=e1431]: Smallville模拟小镇
+                - text: Entity
+            - generic [ref=e1432]: "0.002291"
+          - button "7 游戏行业 Entity 0.002183" [ref=e1433] [cursor=pointer]:
+            - generic [ref=e1434]:
+              - generic [ref=e1435]: "7"
+              - generic [ref=e1436]:
+                - strong [ref=e1437]: 游戏行业
+                - text: Entity
+            - generic [ref=e1438]: "0.002183"
+          - button "8 LLM Entity 0.002115" [ref=e1439] [cursor=pointer]:
+            - generic [ref=e1440]:
+              - generic [ref=e1441]: "8"
+              - generic [ref=e1442]:
+                - strong [ref=e1443]: LLM
+                - text: Entity
+            - generic [ref=e1444]: "0.002115"
+          - button "9 商业化 Entity 0.002067" [ref=e1445] [cursor=pointer]:
+            - generic [ref=e1446]:
+              - generic [ref=e1447]: "9"
+              - generic [ref=e1448]:
+                - strong [ref=e1449]: 商业化
+                - text: Entity
+            - generic [ref=e1450]: "0.002067"
+          - button "10 Flow Matching模型结构 Entity 0.00197" [ref=e1451] [cursor=pointer]:
+            - generic [ref=e1452]:
+              - generic [ref=e1453]: "10"
+              - generic [ref=e1454]:
+                - strong [ref=e1455]: Flow Matching模型结构
+                - text: Entity
+            - generic [ref=e1456]: "0.00197"
+  - generic [ref=e60]:
+    - generic [ref=e61]:
+      - generic [ref=e62]:
+        - generic [ref=e63]: GraphRAG 查询
+        - textbox "GraphRAG 查询" [ref=e64]:
+          - /placeholder: 例如：这个图谱中最关键的人物和跨社区桥节点是谁？
+          - text: 图谱中最关键的人物和桥接节点是谁？
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - generic [ref=e67]: 上下文策略
+          - combobox "上下文策略" [ref=e68]:
+            - option "community_aware" [selected]
+            - option "centrality_aware"
+            - option "path_aware"
+        - button "生成 GraphRAG 上下文" [ref=e69] [cursor=pointer]
+    - generic [ref=e70]:
+      - generic [ref=e71]:
+        - heading "GraphRAG 上下文" [level=2] [ref=e72]
+        - paragraph [ref=e73]: 面向 Agent / 报告生成的结构化上下文输出
+      - generic [ref=e1457]:
+        - generic [ref=e1458]: 查询主题：图谱中最关键的人物和桥接节点是谁？ 策略：community_aware 选中节点数：15，选中边数：0 全局重要节点：AI, OpenAI, 谷歌, 英伟达, AGI 主要社区：社区986(size=183), 社区360(size=153), 社区219(size=137)
+        - generic [ref=e1459]:
+          - strong [ref=e1460]: 引用线索
+          - list [ref=e1461]:
+            - listitem [ref=e1462]: "社区 986: 核心节点 AI, AI技术, 游戏开发"
+            - listitem [ref=e1463]: "社区 360: 核心节点 OpenAI, GitHub, ChatGPT"

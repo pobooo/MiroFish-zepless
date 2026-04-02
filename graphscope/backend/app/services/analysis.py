@@ -22,6 +22,12 @@ class GraphAnalysisService:
         "betweenness_centrality",
         "closeness_centrality",
         "eigenvector_centrality",
+        "katz_centrality",
+        "harmonic_centrality",
+        "clustering_coefficient",
+        "core_number",
+        "hits_hub",
+        "hits_authority",
     )
 
     def build_graph(self, data: GraphData) -> nx.DiGraph:
@@ -82,6 +88,8 @@ class GraphAnalysisService:
             return {metric: [] for metric in self.SUPPORTED_RANKINGS}
 
         undirected = graph.to_undirected()
+        # 移除自环（部分算法如 core_number 不允许自环）
+        undirected.remove_edges_from(nx.selfloop_edges(undirected))
         rankings: dict[str, dict[str, float]] = {
             "degree_centrality": nx.degree_centrality(undirected),
             "pagerank": nx.pagerank(graph, weight="weight"),
@@ -93,6 +101,34 @@ class GraphAnalysisService:
         except Exception:
             rankings["eigenvector_centrality"] = {node: 0.0 for node in graph.nodes}
 
+        # ---- 新增指标 ----
+        # Katz Centrality
+        try:
+            rankings["katz_centrality"] = nx.katz_centrality_numpy(graph, weight="weight")
+        except Exception:
+            rankings["katz_centrality"] = {node: 0.0 for node in graph.nodes}
+
+        # Harmonic Centrality（改进版 Closeness，处理非连通图更稳健）
+        rankings["harmonic_centrality"] = nx.harmonic_centrality(undirected)
+
+        # Clustering Coefficient（节点邻居互连程度）
+        clustering = nx.clustering(undirected)
+        rankings["clustering_coefficient"] = clustering
+
+        # Core Number（K-Core 层数）
+        core_numbers = nx.core_number(undirected)
+        # 转为浮点数以兼容排序
+        rankings["core_number"] = {node: float(v) for node, v in core_numbers.items()}
+
+        # HITS: Hub 和 Authority 分数
+        try:
+            hubs, authorities = nx.hits(graph, max_iter=200, normalized=True)
+            rankings["hits_hub"] = hubs
+            rankings["hits_authority"] = authorities
+        except Exception:
+            rankings["hits_hub"] = {node: 0.0 for node in graph.nodes}
+            rankings["hits_authority"] = {node: 0.0 for node in graph.nodes}
+
         # 返回所有节点的排行数据，前端负责按类型过滤后再截断 top_k
         return {
             metric: self._to_items(graph, metric, scores, top_k=graph.number_of_nodes())
@@ -103,6 +139,8 @@ class GraphAnalysisService:
         node_count = graph.number_of_nodes()
         edge_count = graph.number_of_edges()
         undirected = graph.to_undirected()
+        # 移除自环
+        undirected.remove_edges_from(nx.selfloop_edges(undirected))
 
         if node_count == 0:
             return GlobalMetrics(
@@ -116,6 +154,10 @@ class GraphAnalysisService:
                 average_shortest_path_length=None,
                 diameter=None,
                 bridge_edge_count=0,
+                transitivity=0,
+                assortativity=None,
+                modularity=None,
+                max_core_number=0,
             )
 
         components = list(nx.connected_components(undirected)) if undirected.number_of_nodes() else []
@@ -130,6 +172,35 @@ class GraphAnalysisService:
 
         average_degree = mean(dict(undirected.degree()).values()) if undirected.number_of_nodes() else 0
 
+        # ---- 新增全局指标 ----
+        # Transitivity（全局聚类系数 / 三角形闭合比例）
+        transitivity = round(nx.transitivity(undirected), 6) if undirected.number_of_nodes() else 0
+
+        # Assortativity（度-度相关性，同配性）
+        assortativity = None
+        try:
+            if undirected.number_of_edges() > 0:
+                assortativity = round(nx.degree_assortativity_coefficient(undirected), 6)
+        except Exception:
+            pass
+
+        # Modularity（基于 Louvain 社区的模块度）
+        modularity = None
+        try:
+            if undirected.number_of_nodes() > 1:
+                communities = list(nx.community.louvain_communities(undirected, weight="weight", seed=42))
+                modularity = round(nx.community.modularity(undirected, communities), 6)
+        except Exception:
+            pass
+
+        # Max K-Core Number
+        max_core_number = 0
+        try:
+            core_numbers = nx.core_number(undirected)
+            max_core_number = max(core_numbers.values()) if core_numbers else 0
+        except Exception:
+            pass
+
         return GlobalMetrics(
             node_count=node_count,
             edge_count=edge_count,
@@ -141,6 +212,10 @@ class GraphAnalysisService:
             average_shortest_path_length=average_shortest_path_length,
             diameter=diameter,
             bridge_edge_count=len(list(nx.bridges(undirected))) if undirected.number_of_nodes() else 0,
+            transitivity=transitivity,
+            assortativity=assortativity,
+            modularity=modularity,
+            max_core_number=max_core_number,
         )
 
     def detect_communities(self, graph: nx.DiGraph, algorithm: str = "louvain", top_k_core: int = 3) -> list[CommunityItem]:

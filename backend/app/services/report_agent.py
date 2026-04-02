@@ -1100,12 +1100,15 @@ class ReportAgent:
             return tool_calls
 
         # 格式2: call>toolname 格式（LLM 有时输出的非标准格式）
-        # 匹配 "call>quicksearch\n{...}" 或 "call>quick_search {...}"
-        call_pattern = r'call\s*>\s*(\w+)\s*\n?\s*(\{[^}]+\})'
-        for match in re.finditer(call_pattern, response, re.DOTALL):
+        # 变体 A: call>quicksearch\n{"query": "...", "limit": 5}
+        # 变体 B: call>quicksearch", "parameters": {"query": "...", "limit": 5}}
+        #   （LLM 把工具名和 JSON 混在一起，整行相当于截断的 {"name":"quicksearch","parameters":{...}}）
+        
+        # 先尝试变体 B：call>toolname", "parameters": {...}}
+        call_variant_b = r'call\s*>\s*(\w+)"\s*,\s*"parameters"\s*:\s*(\{.*?\})\s*\}'
+        for match in re.finditer(call_variant_b, response, re.DOTALL):
             raw_tool_name = match.group(1).lower().strip()
             json_str = match.group(2)
-            # 映射到标准工具名
             std_name = self.TOOL_NAME_ALIASES.get(raw_tool_name)
             if std_name:
                 try:
@@ -1116,6 +1119,29 @@ class ReportAgent:
                     })
                 except json.JSONDecodeError:
                     pass
+
+        if tool_calls:
+            return tool_calls
+
+        # 变体 A: call>toolname\n{...} 或 call>toolname {...}
+        # 使用贪婪匹配 + 手动提取平衡大括号的 JSON
+        call_pattern_a = r'call\s*>\s*(\w+)\s*\n?\s*(\{.+)'
+        for match in re.finditer(call_pattern_a, response, re.DOTALL):
+            raw_tool_name = match.group(1).lower().strip()
+            json_candidate = match.group(2)
+            std_name = self.TOOL_NAME_ALIASES.get(raw_tool_name)
+            if std_name:
+                # 手动找到平衡的 JSON（支持嵌套大括号）
+                balanced_json = self._extract_balanced_json(json_candidate)
+                if balanced_json:
+                    try:
+                        params = json.loads(balanced_json)
+                        tool_calls.append({
+                            "name": std_name,
+                            "parameters": params
+                        })
+                    except json.JSONDecodeError:
+                        pass
 
         if tool_calls:
             return tool_calls
@@ -1144,6 +1170,68 @@ class ReportAgent:
                 pass
 
         return tool_calls
+
+    def _clean_tool_call_leaks(self, response: str) -> str:
+        """清理 LLM 响应中泄露的工具调用文本。
+        
+        覆盖所有已知的 LLM 输出变体：
+        1. <tool_call>{...}</tool_call>  — XML 标准格式
+        2. [TOOL_CALL]...()             — 方括号格式
+        3. call>toolname\n{...}         — 非标准格式（简单参数）
+        4. call>toolname", "parameters": {...}}  — 非标准格式（嵌套 JSON）
+        """
+        # 1. XML 风格
+        text = re.sub(r'<tool_call>.*?</tool_call>', '', response, flags=re.DOTALL)
+        # 2. [TOOL_CALL] 风格
+        text = re.sub(r'\[TOOL_CALL\].*?\)', '', text)
+        # 3 & 4. call> 风格（统一用贪婪匹配到行尾再回退，覆盖嵌套大括号）
+        # 变体 B: call>toolname", "parameters": {...}}
+        text = re.sub(
+            r'call\s*>\s*\w+"\s*,\s*"parameters"\s*:\s*\{.*?\}\s*\}',
+            '', text, flags=re.DOTALL
+        )
+        # 变体 A: call>toolname\n{...}（支持嵌套大括号）
+        text = re.sub(
+            r'call\s*>\s*\w+\s*\n?\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}',
+            '', text, flags=re.DOTALL
+        )
+        # 兜底：如果还残留 call>word 后跟任何 JSON-like 内容
+        text = re.sub(r'call\s*>\s*\w+[^a-zA-Z\u4e00-\u9fff]*\{.*?\}', '', text, flags=re.DOTALL)
+        # 清理多余空行
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text
+
+    @staticmethod
+    def _extract_balanced_json(s: str) -> str | None:
+        """从字符串开头提取第一个平衡大括号的 JSON 子串。
+        
+        例如: '{"query": "test", "limit": 5} some trailing text'
+              → '{"query": "test", "limit": 5}'
+        """
+        if not s or s[0] != '{':
+            return None
+        depth = 0
+        in_string = False
+        escape_next = False
+        for i, ch in enumerate(s):
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\' and in_string:
+                escape_next = True
+                continue
+            if ch == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    return s[:i + 1]
+        return None
 
     def _is_valid_tool_call(self, data: dict) -> bool:
         """校验解析出的 JSON 是否是合法的工具调用"""
@@ -1869,9 +1957,7 @@ class ReportAgent:
             
             if not tool_calls:
                 # 没有工具调用，直接返回响应
-                clean_response = re.sub(r'<tool_call>.*?</tool_call>', '', response, flags=re.DOTALL)
-                clean_response = re.sub(r'\[TOOL_CALL\].*?\)', '', clean_response)
-                clean_response = re.sub(r'call\s*>\s*\w+\s*\n?\s*\{[^}]*\}', '', clean_response, flags=re.DOTALL)
+                clean_response = self._clean_tool_call_leaks(response)
                 
                 return {
                     "response": clean_response.strip(),
@@ -1906,9 +1992,7 @@ class ReportAgent:
         )
         
         # 清理响应
-        clean_response = re.sub(r'<tool_call>.*?</tool_call>', '', final_response, flags=re.DOTALL)
-        clean_response = re.sub(r'\[TOOL_CALL\].*?\)', '', clean_response)
-        clean_response = re.sub(r'call\s*>\s*\w+\s*\n?\s*\{[^}]*\}', '', clean_response, flags=re.DOTALL)
+        clean_response = self._clean_tool_call_leaks(final_response)
         
         return {
             "response": clean_response.strip(),

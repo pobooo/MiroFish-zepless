@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from itertools import combinations
 
@@ -8,6 +9,41 @@ import networkx as nx
 from app.core.config import get_settings
 from app.models.schemas import GraphData, GraphEdge, GraphNode, GraphPathResponse, RAGContextRequest, RAGContextResponse
 from app.services.analysis import GraphAnalysisService
+
+# ---------------------------------------------------------------------------
+# 中英文混合分词工具（无外部依赖）
+# ---------------------------------------------------------------------------
+_RE_CJK = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
+_RE_WORD = re.compile(r"[a-zA-Z0-9]+|[\u4e00-\u9fff\u3400-\u4dbf]")
+
+
+def _tokenize(text: str) -> list[str]:
+    """将中英文混合文本拆分为 token 列表。
+
+    英文 / 数字按完整单词切分，中文按**单字**切分。
+    返回值全部小写，去重保序。
+    """
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for m in _RE_WORD.finditer(text.lower()):
+        tok = m.group()
+        if tok not in seen:
+            seen.add(tok)
+            tokens.append(tok)
+    return tokens
+
+
+def _cjk_bigrams(text: str) -> list[str]:
+    """提取连续中文双字组合（bigram），用于在较长文本中做短语匹配。"""
+    chars = [ch for ch in text if _RE_CJK.match(ch)]
+    bigrams: list[str] = []
+    seen: set[str] = set()
+    for i in range(len(chars) - 1):
+        bg = chars[i] + chars[i + 1]
+        if bg not in seen:
+            seen.add(bg)
+            bigrams.append(bg)
+    return bigrams
 
 
 class GraphRAGSupportService:
@@ -25,23 +61,64 @@ class GraphRAGSupportService:
         return None
 
     def _query_seed_scores(self, data: GraphData, query: str) -> dict[str, float]:
-        query_terms = [term.strip().lower() for term in query.split() if term.strip()]
-        if not query_terms:
+        """为每个节点计算与查询的相关度分数。
+
+        采用双向匹配策略：
+        1. 正向：将查询分词后在节点文本中搜索（与原来相同）
+        2. 反向：检查节点名称是否作为子串出现在查询中（对中文尤其有效，
+           例如查询 "OpenAI最近有什么进展" 包含节点名 "OpenAI"）
+        """
+        query_lower = query.lower()
+
+        # --- 分词 ---
+        query_tokens = _tokenize(query)
+        query_bigrams = _cjk_bigrams(query)
+        all_terms = list(dict.fromkeys(query_tokens + query_bigrams))  # 去重保序
+
+        if not all_terms and not query_lower.strip():
             return {}
 
         scores: dict[str, float] = defaultdict(float)
+
         for node in data.nodes:
-            haystack = " ".join(filter(None, [node.name, node.summary or ""]))
+            node_name = (node.name or "").strip()
+            node_name_lower = node_name.lower()
+            haystack = " ".join(filter(None, [node_name, node.summary or ""]))
             text = haystack.lower()
-            for term in query_terms:
-                scores[node.id] += text.count(term) * 2
+
+            # --- 正向匹配：查询 token 在节点文本中出现 ---
+            for term in all_terms:
+                count = text.count(term)
+                if count:
+                    scores[node.id] += count * 2
+
+            # --- 反向匹配：节点名称作为子串出现在查询中 ---
+            if node_name_lower and len(node_name_lower) >= 2 and node_name_lower in query_lower:
+                # 名称越长匹配越精准，给予更高权重
+                scores[node.id] += len(node_name_lower) * 3
+
+            # --- 反向匹配：节点名称的单字 token 在查询中出现 ---
+            if node_name_lower:
+                name_tokens = _tokenize(node_name)
+                matched = sum(1 for t in name_tokens if t in query_lower)
+                if matched > 0:
+                    scores[node.id] += matched * 1.5
+
         for edge in data.edges:
             edge_text = " ".join(filter(None, [edge.name or "", edge.fact or ""])).lower()
-            for term in query_terms:
+
+            for term in all_terms:
                 count = edge_text.count(term)
                 if count:
                     scores[edge.source] += count
                     scores[edge.target] += count
+
+            # 反向：检查边的关系名或 fact 中的关键词是否在查询中
+            edge_name_lower = (edge.name or "").lower()
+            if edge_name_lower and len(edge_name_lower) >= 2 and edge_name_lower in query_lower:
+                scores[edge.source] += len(edge_name_lower) * 2
+                scores[edge.target] += len(edge_name_lower) * 2
+
         return scores
 
     def _subgraph_payload(self, source_graph: nx.DiGraph, node_ids: set[str]) -> tuple[list[GraphNode], list[GraphEdge]]:
@@ -104,19 +181,49 @@ class GraphRAGSupportService:
                 except (nx.NetworkXNoPath, nx.NodeNotFound):
                     continue
         else:
+            # community_aware 策略：seed 节点 + 邻居 + 所在社区的核心节点
+            # 1. 先选 seed 分数最高的节点及其邻居（与查询最相关）
+            top_seeds = [
+                node_id for node_id, _ in sorted(
+                    seed_scores.items(), key=lambda item: item[1], reverse=True
+                ) if seed_scores.get(node_id, 0) > 0
+            ][: request.max_nodes // 2]
+
+            for node_id in top_seeds:
+                selected_node_ids.add(node_id)
+                # 加入直接邻居（1-hop）
+                selected_node_ids.update(list(graph.successors(node_id))[:3])
+                selected_node_ids.update(list(graph.predecessors(node_id))[:3])
+
+            if top_seeds:
+                citations.append(
+                    f"查询相关节点: {', '.join(graph.nodes[nid].get('name', nid) for nid in top_seeds[:5])}"
+                )
+
+            # 2. 补充社区核心节点（优先匹配 seed 所在社区）
+            seed_node_ids = set(top_seeds)
             matched_communities = []
-            seed_node_ids = {node_id for node_id, score in seed_scores.items() if score > 0}
             for community in communities:
                 members = set(community.member_node_ids)
                 if members & seed_node_ids:
                     matched_communities.append(community)
             if not matched_communities:
                 matched_communities = communities[:2]
-            for community in matched_communities[:2]:
-                selected_node_ids.update(community.member_node_ids[: request.max_nodes])
-                citations.append(
-                    f"社区 {community.community_id}: 核心节点 {', '.join(node.name for node in community.core_nodes)}"
-                )
+
+            remaining = request.max_nodes - len(selected_node_ids)
+            if remaining > 0:
+                for community in matched_communities[:2]:
+                    for core_node in community.core_nodes:
+                        selected_node_ids.add(core_node.node_id)
+                    citations.append(
+                        f"社区 {community.community_id}: 核心节点 {', '.join(node.name for node in community.core_nodes)}"
+                    )
+
+            # 3. 如果 seed 没匹配到任何节点，用 important_nodes 兜底
+            if not top_seeds:
+                for item in important_nodes[: request.max_nodes]:
+                    selected_node_ids.add(item.node_id)
+                citations.append("未匹配到查询相关节点，使用全局重要节点")
 
         if not selected_node_ids:
             selected_node_ids.update(item.node_id for item in important_nodes[: request.max_nodes])

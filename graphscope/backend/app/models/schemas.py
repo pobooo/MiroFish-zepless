@@ -42,6 +42,10 @@ class GlobalMetrics(BaseModel):
     average_shortest_path_length: float | None = None
     diameter: int | None = None
     bridge_edge_count: int = 0
+    transitivity: float = 0
+    assortativity: float | None = None
+    modularity: float | None = None
+    max_core_number: int = 0
 
 
 class NodeMetricItem(BaseModel):
