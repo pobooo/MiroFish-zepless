@@ -9,12 +9,13 @@
     embedder = LocalEmbedder()
 
 可选模型（按需切换）:
-    - all-MiniLM-L6-v2         英文模型，22M 参数，384维，最快（默认）
-    - paraphrase-multilingual-MiniLM-L12-v2  多语言，118M 参数，384维，中文更好
+    - paraphrase-multilingual-MiniLM-L12-v2  多语言，118M 参数，384维，中文优秀（默认）
+    - all-MiniLM-L6-v2         英文模型，22M 参数，384维，最快（仅英文场景）
+    - BAAI/bge-small-zh-v1.5   中文专用，49M 参数，512维，中文最佳（需重建 embedding）
     - moka-ai/m3e-base         中文专用，基于 BERT，768维
 
 通过环境变量切换:
-    EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2
+    EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
 """
 
 import os
@@ -26,8 +27,8 @@ from graphiti_core.embedder.client import EmbedderClient
 
 logger = logging.getLogger(__name__)
 
-# 默认模型（英文，体积小，速度快）
-DEFAULT_MODEL = "all-MiniLM-L6-v2"
+# 默认模型（多语言，中文效果远优于英文模型，且维度与旧模型兼容）
+DEFAULT_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
 # 类级别模型缓存和锁，避免多个 LocalEmbedder 实例重复加载同一模型
 _model_cache: dict = {}

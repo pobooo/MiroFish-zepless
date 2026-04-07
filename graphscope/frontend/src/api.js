@@ -88,6 +88,10 @@ export function buildGraph(payload) {
   })
 }
 
+export function fetchProjectOntology(groupId) {
+  return request(`/build/project/${encodeURIComponent(groupId)}/ontology`)
+}
+
 export function fetchBuildTask(taskId) {
   return request(`/build/task/${taskId}`)
 }

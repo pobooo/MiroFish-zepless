@@ -88,6 +88,7 @@ class GraphBuilderService:
         text: str,
         ontology: Dict[str, Any],
         graph_name: str = "GraphScope Graph",
+        group_id: Optional[str] = None,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
     ) -> str:
@@ -98,6 +99,7 @@ class GraphBuilderService:
             text: 输入文本
             ontology: 本体定义
             graph_name: 图谱名称
+            group_id: 已有项目的 group_id（传入则为增量更新）
             chunk_size: 文本块大小
             chunk_overlap: 块重叠大小
 
@@ -110,7 +112,7 @@ class GraphBuilderService:
 
         thread = threading.Thread(
             target=self._build_worker,
-            args=(task_id, text, ontology, graph_name, chunk_size, chunk_overlap),
+            args=(task_id, text, ontology, graph_name, group_id, chunk_size, chunk_overlap),
             daemon=True,
         )
         thread.start()
@@ -123,6 +125,7 @@ class GraphBuilderService:
         text: str,
         ontology: Dict[str, Any],
         graph_name: str,
+        group_id: Optional[str],
         chunk_size: int,
         chunk_overlap: int,
     ):
@@ -131,7 +134,7 @@ class GraphBuilderService:
         asyncio.set_event_loop(loop)
         try:
             loop.run_until_complete(
-                self._build_async(task_id, text, ontology, graph_name, chunk_size, chunk_overlap)
+                self._build_async(task_id, text, ontology, graph_name, group_id, chunk_size, chunk_overlap)
             )
         finally:
             loop.close()
@@ -142,20 +145,23 @@ class GraphBuilderService:
         text: str,
         ontology: Dict[str, Any],
         graph_name: str,
+        group_id: Optional[str],
         chunk_size: int,
         chunk_overlap: int,
     ):
         """图谱构建异步实现"""
         task = _tasks[task_id]
+        is_incremental = bool(group_id)
         try:
             task.status = "processing"
             task.progress = 5
-            task.message = "开始构建图谱..."
+            task.message = "增量更新中..." if is_incremental else "开始构建图谱..."
 
-            # 1. 生成 group_id
-            group_id = f"graphscope_{uuid.uuid4().hex[:16]}"
+            # 1. 确定 group_id
+            if not group_id:
+                group_id = f"graphscope_{uuid.uuid4().hex[:16]}"
             task.progress = 10
-            task.message = f"图谱已创建: {group_id}"
+            task.message = f"{'增量更新' if is_incremental else '图谱已创建'}: {group_id}"
 
             # 2. 构建类型字典
             entity_types_dict, edge_types_dict = self._build_type_dicts(ontology)
@@ -223,18 +229,22 @@ class GraphBuilderService:
 
                 count_result = await self._count_graph(graphiti, group_id)
 
-                # 保存项目元数据（名称）到 Neo4j
-                await self._save_project_meta(graphiti, group_id, graph_name)
+                # 保存项目元数据（名称、本体）到 Neo4j
+                await self._save_project_meta(
+                    graphiti, group_id, graph_name,
+                    ontology=ontology, is_incremental=is_incremental,
+                )
 
             finally:
                 await graphiti.close()
 
             task.status = "completed"
             task.progress = 100
-            task.message = "图谱构建完成"
+            task.message = "增量更新完成" if is_incremental else "图谱构建完成"
             task.result = {
                 "group_id": group_id,
                 "graph_name": graph_name,
+                "is_incremental": is_incremental,
                 "chunks_total": total_chunks,
                 "chunks_failed": failed_chunks,
                 **count_result,
@@ -271,17 +281,37 @@ class GraphBuilderService:
         except Exception:
             return {"node_count": 0, "edge_count": 0}
 
-    async def _save_project_meta(self, graphiti: Graphiti, group_id: str, graph_name: str):
-        """在 Neo4j 中保存项目元数据（名称等），用于列表展示。"""
+    async def _save_project_meta(
+        self,
+        graphiti: Graphiti,
+        group_id: str,
+        graph_name: str,
+        ontology: Optional[Dict[str, Any]] = None,
+        is_incremental: bool = False,
+    ):
+        """在 Neo4j 中保存项目元数据（名称、本体等），用于列表展示和增量更新。"""
         try:
-            await graphiti.driver.execute_query(
-                """
-                MERGE (p:GraphProject {group_id: $gid})
-                SET p.name = $name,
-                    p.created_at = datetime()
-                """,
-                params={"gid": group_id, "name": graph_name},
-            )
+            ontology_json = json.dumps(ontology, ensure_ascii=False) if ontology else None
+            if is_incremental:
+                # 增量更新：仅更新时间戳，不覆盖名称和本体
+                await graphiti.driver.execute_query(
+                    """
+                    MERGE (p:GraphProject {group_id: $gid})
+                    SET p.updated_at = datetime()
+                    """,
+                    params={"gid": group_id},
+                )
+            else:
+                # 新建项目：保存名称、本体、创建时间
+                await graphiti.driver.execute_query(
+                    """
+                    MERGE (p:GraphProject {group_id: $gid})
+                    SET p.name = $name,
+                        p.ontology = $ontology,
+                        p.created_at = datetime()
+                    """,
+                    params={"gid": group_id, "name": graph_name, "ontology": ontology_json},
+                )
         except Exception as e:
             logger.warning(f"保存项目元数据失败: {e}")
 

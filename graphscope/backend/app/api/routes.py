@@ -277,7 +277,7 @@ def generate_ontology(request: OntologyRequest) -> OntologyResponse:
 
 @router.post("/build/graph", response_model=BuildTaskResponse)
 def build_graph(request: BuildRequest) -> BuildTaskResponse:
-    """启动图谱构建任务（异步，返回 task_id）"""
+    """启动图谱构建任务（异步，返回 task_id）。传入 group_id 则为增量更新。"""
     from app.services.graph_builder import GraphBuilderService
 
     builder = GraphBuilderService()
@@ -285,10 +285,15 @@ def build_graph(request: BuildRequest) -> BuildTaskResponse:
         text=request.text,
         ontology=request.ontology,
         graph_name=request.graph_name,
+        group_id=request.group_id,
         chunk_size=request.chunk_size,
         chunk_overlap=request.chunk_overlap,
     )
-    return BuildTaskResponse(task_id=task_id, status="pending", message="任务已创建")
+    is_incremental = bool(request.group_id)
+    return BuildTaskResponse(
+        task_id=task_id, status="pending",
+        message="增量更新任务已创建" if is_incremental else "任务已创建",
+    )
 
 
 @router.get("/build/task/{task_id}", response_model=BuildTaskResponse)
@@ -307,4 +312,35 @@ def get_build_task(task_id: str) -> BuildTaskResponse:
         message=task.message,
         result=task.result,
         error=task.error,
+    )
+
+
+@router.get("/build/project/{group_id}/ontology", response_model=OntologyResponse)
+def get_project_ontology(
+    group_id: str,
+    client: Neo4jClient = Depends(get_neo4j_client),
+) -> OntologyResponse:
+    """获取已有项目的本体定义，用于增量更新时复用。"""
+    import json as _json
+
+    rows = client.run_query(
+        "MATCH (p:GraphProject {group_id: $gid}) RETURN p.ontology AS ontology, p.name AS name LIMIT 1",
+        {"gid": group_id},
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"项目不存在: {group_id}")
+
+    ontology_raw = rows[0].get("ontology")
+    if not ontology_raw:
+        raise HTTPException(status_code=404, detail=f"项目 {group_id} 没有保存本体定义（可能是旧版创建的项目）")
+
+    try:
+        ontology = _json.loads(ontology_raw) if isinstance(ontology_raw, str) else ontology_raw
+    except Exception:
+        raise HTTPException(status_code=500, detail="本体定义解析失败")
+
+    return OntologyResponse(
+        entity_types=ontology.get("entity_types", []),
+        edge_types=ontology.get("edge_types", []),
+        analysis_summary=f"从项目 {rows[0].get('name', group_id)} 加载的已有本体定义",
     )

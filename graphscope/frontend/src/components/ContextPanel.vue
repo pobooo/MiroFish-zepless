@@ -83,7 +83,7 @@ function renderMiniGraph() {
     .selectAll('g')
     .data(nodes)
     .join('g')
-    .style('cursor', 'default')
+    .style('cursor', 'grab')
 
   node.append('circle')
     .attr('r', 10)
@@ -121,6 +121,23 @@ function renderMiniGraph() {
 
       node.attr('transform', (d) => `translate(${d.x},${d.y})`)
     })
+
+  // 节点拖拽
+  node.call(
+    d3.drag()
+      .on('start', (event, d) => {
+        if (!event.active) simulation.alphaTarget(0.1).restart()
+        d.fx = d.x
+        d.fy = d.y
+      })
+      .on('drag', (event, d) => {
+        d.fx = event.x
+        d.fy = event.y
+      })
+      .on('end', (event, d) => {
+        if (!event.active) simulation.alphaTarget(0)
+      }),
+  )
 
   // 图例
   const legendGroup = svg.append('g')

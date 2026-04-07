@@ -37,7 +37,26 @@ const scoreMap = computed(() => {
   return Object.fromEntries(items.map((item) => [item.node_id, item.score]))
 })
 
-const selectedNode = computed(() => graph.value.nodes.find((node) => node.id === selectedNodeId.value) || null)
+const selectedNode = computed(() => {
+  if (!selectedNodeId.value) return null
+  // 优先从画布节点找（有完整 attributes / summary）
+  const canvasNode = graph.value.nodes.find((n) => n.id === selectedNodeId.value)
+  if (canvasNode) return canvasNode
+  // 画布中没有 → 从排行数据构造轻量节点（至少能展示名称、类型、分数）
+  for (const items of Object.values(metrics.value?.rankings || {})) {
+    const hit = items.find((item) => item.node_id === selectedNodeId.value)
+    if (hit) {
+      return {
+        id: hit.node_id,
+        name: hit.name,
+        labels: hit.labels || [],
+        summary: '',
+        attributes: {},
+      }
+    }
+  }
+  return null
+})
 const importantNodes = computed(() => metrics.value?.important_nodes || [])
 
 const entityTypeFilter = ref('')
@@ -179,6 +198,45 @@ async function generateContext() {
   }
 }
 
+// ---- 侧栏节点详情辅助 ----
+const SYSTEM_LABELS = new Set(['Entity', 'Node', 'Episodic'])
+const HIDDEN_ATTRS = new Set([
+  'uuid', 'name', 'group_id', 'summary', 'created_at', 'embedding',
+  'name_embedding', 'labels', 'source_description',
+])
+const NODE_TYPE_COLORS = {
+  Person: '#60a5fa', Organization: '#f472b6', Company: '#34d399',
+  University: '#fbbf24', MediaOutlet: '#a78bfa', GovernmentAgency: '#fb923c',
+  TechCompany: '#2dd4bf', Researcher: '#f87171', AIModel: '#818cf8',
+  Startup: '#4ade80', GameDeveloper: '#e879f9', AIProduct: '#38bdf8',
+}
+
+function getNodeEntityType(node) {
+  if (!node) return 'Entity'
+  for (const lbl of (node.labels || [])) {
+    if (!SYSTEM_LABELS.has(lbl)) return lbl
+  }
+  return 'Entity'
+}
+
+function getNodeTypeColor(node) {
+  return NODE_TYPE_COLORS[getNodeEntityType(node)] || '#94a3b8'
+}
+
+const nodeScore = computed(() => {
+  if (!selectedNodeId.value) return null
+  return scoreMap.value[selectedNodeId.value] ?? null
+})
+
+const nodeExtraProps = computed(() => {
+  if (!selectedNode.value) return []
+  const attrs = selectedNode.value.attributes || {}
+  return Object.entries(attrs)
+    .filter(([k]) => !HIDDEN_ATTRS.has(k))
+    .map(([k, v]) => ({ key: k, value: typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v ?? '') }))
+    .filter((item) => item.value !== '' && item.value !== 'null')
+})
+
 function selectNode(nodeId) {
   selectedNodeId.value = nodeId
   if (nodeId) selectedEdge.value = null
@@ -242,7 +300,7 @@ onMounted(async () => {
 
     <!-- 构建面板（v-show 保持状态） -->
     <section v-show="activeTab === 'build'" class="build-section">
-      <BuildPanel @build-complete="onBuildComplete" />
+      <BuildPanel :groups="groups" @build-complete="onBuildComplete" />
     </section>
 
     <!-- 分析面板（原有内容） -->
@@ -316,42 +374,97 @@ onMounted(async () => {
           :metrics="metrics?.global_metrics"
           :communities="metrics?.communities || []"
         />
-        <div class="important-nodes-panel">
-          <div class="type-filter-bar">
-            <div class="type-filter-left">
-              <span class="type-filter-label">节点排行</span>
-              <span class="type-filter-sub">点击节点可查看详情，选择不同视角切换排行</span>
+      </div>
+    </section>
+
+    <!-- 排行 + 详情：独立全宽区域，左详情 右排行 -->
+    <section class="ranking-section">
+      <div class="ranking-section-header">
+        <div class="type-filter-bar">
+          <div class="type-filter-left">
+            <span class="type-filter-label">节点排行</span>
+            <span class="type-filter-sub">点击节点查看详情</span>
+          </div>
+          <div class="type-filter-right">
+            <select v-model="rankingView" class="type-filter-select">
+              <option value="pagerank">PageRank（影响力）</option>
+              <option value="betweenness_centrality">Betweenness（桥接力）</option>
+              <option value="degree_centrality">Degree（连接数）</option>
+              <option value="closeness_centrality">Closeness（接近度）</option>
+              <option value="eigenvector_centrality">Eigenvector（圈子质量）</option>
+              <option value="katz_centrality">Katz（间接影响力）</option>
+              <option value="harmonic_centrality">Harmonic（调和接近度）</option>
+              <option value="clustering_coefficient">Clustering（聚类系数）</option>
+              <option value="core_number">K-Core（核心层数）</option>
+              <option value="hits_hub">HITS Hub（枢纽分）</option>
+              <option value="hits_authority">HITS Authority（权威分）</option>
+            </select>
+            <select v-model="entityTypeFilter" class="type-filter-select">
+              <option value="">全部类型</option>
+              <option v-for="t in entityTypes" :key="t" :value="t">{{ t }}</option>
+            </select>
+            <span class="type-filter-badge">Top {{ displayedRankingItems.length }}</span>
+          </div>
+        </div>
+        <div class="metric-desc-bar metric-desc-bar-full">
+          <span class="metric-desc-icon">💡</span>
+          <span class="metric-desc-text">{{ currentMetricDesc.desc }}</span>
+        </div>
+      </div>
+
+      <div v-if="metricsLoading && !importantNodes.length" class="panel metrics-loading-hint">
+        <p>⏳ 正在计算网络指标…</p>
+      </div>
+      <div v-else class="ranking-detail-grid">
+        <!-- 左：节点详情 -->
+        <div class="ranking-detail-left">
+          <Transition name="detail-fade" mode="out-in">
+            <div v-if="selectedNode" :key="selectedNode.id" class="side-node-detail">
+              <div class="side-detail-header">
+                <h3>节点详情</h3>
+                <span class="side-type-badge" :style="{ background: getNodeTypeColor(selectedNode) }">
+                  {{ getNodeEntityType(selectedNode) }}
+                </span>
+                <button class="side-close-btn" @click="selectedNodeId = null">✕</button>
+              </div>
+              <div class="side-detail-body">
+                <div v-if="selectedNode.name" class="side-info-row">
+                  <span class="side-info-label">名称</span>
+                  <span class="side-info-value">{{ selectedNode.name }}</span>
+                </div>
+                <div v-if="selectedNode.id" class="side-info-row">
+                  <span class="side-info-label">UUID</span>
+                  <span class="side-info-value uuid">{{ selectedNode.id }}</span>
+                </div>
+                <div v-if="selectedNode.attributes?.created_at" class="side-info-row">
+                  <span class="side-info-label">创建</span>
+                  <span class="side-info-value">{{ new Date(selectedNode.attributes.created_at).toLocaleString() }}</span>
+                </div>
+                <div v-if="nodeScore != null" class="side-info-row">
+                  <span class="side-info-label">{{ currentMetricDesc.name }}</span>
+                  <span class="side-info-value score-val">{{ Number(nodeScore).toLocaleString(undefined, { maximumFractionDigits: 6 }) }}</span>
+                </div>
+                <div v-if="selectedNode.summary" class="side-summary">
+                  <span class="side-info-label">摘要</span>
+                  <p>{{ selectedNode.summary }}</p>
+                </div>
+                <div v-if="nodeExtraProps.length" class="side-props">
+                  <span class="side-info-label">属性</span>
+                  <div v-for="p in nodeExtraProps" :key="p.key" class="side-prop-row">
+                    <span class="side-prop-key">{{ p.key }}</span>
+                    <span class="side-prop-val">{{ p.value }}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="type-filter-right">
-              <select v-model="rankingView" class="type-filter-select">
-                <option value="pagerank">PageRank（影响力）</option>
-                <option value="betweenness_centrality">Betweenness（桥接力）</option>
-                <option value="degree_centrality">Degree（连接数）</option>
-                <option value="closeness_centrality">Closeness（接近度）</option>
-                <option value="eigenvector_centrality">Eigenvector（圈子质量）</option>
-                <option value="katz_centrality">Katz（间接影响力）</option>
-                <option value="harmonic_centrality">Harmonic（调和接近度）</option>
-                <option value="clustering_coefficient">Clustering（聚类系数）</option>
-                <option value="core_number">K-Core（核心层数）</option>
-                <option value="hits_hub">HITS Hub（枢纽分）</option>
-                <option value="hits_authority">HITS Authority（权威分）</option>
-              </select>
-              <select v-model="entityTypeFilter" class="type-filter-select">
-                <option value="">全部类型</option>
-                <option v-for="t in entityTypes" :key="t" :value="t">{{ t }}</option>
-              </select>
-              <span class="type-filter-badge">Top {{ displayedRankingItems.length }}</span>
+            <div v-else class="side-node-detail side-empty-hint">
+              <p>👈 点击右侧排行中的节点查看详情</p>
             </div>
-          </div>
-          <div class="metric-desc-bar">
-            <span class="metric-desc-icon">💡</span>
-            <span class="metric-desc-text">{{ currentMetricDesc.desc }}</span>
-          </div>
-          <div v-if="metricsLoading && !importantNodes.length" class="panel metrics-loading-hint">
-            <p>⏳ 正在计算网络指标…</p>
-          </div>
+          </Transition>
+        </div>
+        <!-- 右：排行列表 -->
+        <div class="ranking-detail-right">
           <RankingPanel
-            v-else
             hide-title
             :items="displayedRankingItems"
             :selected-node-id="selectedNodeId"
@@ -702,6 +815,224 @@ pre {
   display: grid;
   gap: 14px;
   align-content: start;
+}
+
+/* ---- 排行 + 详情独立区域 ---- */
+.ranking-section {
+  margin-top: 24px;
+}
+
+.ranking-section-header {
+  display: grid;
+  gap: 0;
+}
+
+.ranking-section-header .type-filter-bar {
+  border-radius: 18px 18px 0 0;
+}
+
+.metric-desc-bar-full {
+  border-radius: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.ranking-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 0;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-top: none;
+  border-radius: 0 0 24px 24px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.78);
+}
+
+.ranking-detail-left {
+  border-right: 1px solid rgba(148, 163, 184, 0.1);
+  min-height: 300px;
+  display: flex;
+  align-items: stretch;
+}
+
+.ranking-detail-left > * {
+  width: 100%;
+}
+
+.ranking-detail-left .side-node-detail {
+  border-radius: 0;
+  border: none;
+  background: transparent;
+}
+
+.ranking-detail-left .side-empty-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.ranking-detail-left .side-empty-hint p {
+  margin: 0;
+}
+
+.ranking-detail-right {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.ranking-detail-right::-webkit-scrollbar {
+  width: 4px;
+}
+
+.ranking-detail-right::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 4px;
+}
+
+.ranking-detail-right .ranking-panel {
+  border-radius: 0;
+  border: none;
+}
+
+/* ---- 侧栏节点详情 ---- */
+.side-node-detail {
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  backdrop-filter: blur(18px);
+  overflow: hidden;
+}
+
+.side-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.side-detail-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.side-type-badge {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.side-close-btn {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  font-size: 0.78rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.side-close-btn:hover {
+  background: rgba(148, 163, 184, 0.22);
+  color: #f1f5f9;
+}
+
+.side-detail-body {
+  padding: 14px 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.side-info-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.side-info-label {
+  flex-shrink: 0;
+  min-width: 52px;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.side-info-value {
+  color: #e2e8f0;
+  font-size: 0.84rem;
+  word-break: break-all;
+}
+
+.side-info-value.uuid {
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.side-info-value.score-val {
+  font-weight: 700;
+  color: #60a5fa;
+}
+
+.side-summary {
+  display: grid;
+  gap: 4px;
+}
+
+.side-summary p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+
+.side-props {
+  display: grid;
+  gap: 6px;
+}
+
+.side-prop-row {
+  display: flex;
+  gap: 8px;
+  padding-left: 52px;
+}
+
+.side-prop-key {
+  flex-shrink: 0;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 0.76rem;
+  color: #a78bfa;
+}
+
+.side-prop-val {
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  word-break: break-word;
+}
+
+/* Transition */
+.detail-fade-enter-active,
+.detail-fade-leave-active {
+  transition: all 0.25s ease;
+}
+
+.detail-fade-enter-from,
+.detail-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
 }
 
 @media (max-width: 1440px) {

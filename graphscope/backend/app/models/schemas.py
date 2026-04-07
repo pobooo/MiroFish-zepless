@@ -163,10 +163,11 @@ class OntologyResponse(BaseModel):
 
 
 class BuildRequest(BaseModel):
-    """图谱构建请求"""
+    """图谱构建请求（新建或增量更新）"""
     text: str = Field(description="要构建图谱的文本")
     ontology: dict[str, Any] = Field(description="本体定义（entity_types + edge_types）")
     graph_name: str = Field(default="GraphScope Graph", description="图谱名称")
+    group_id: str | None = Field(default=None, description="已有项目的 group_id，传入则为增量更新")
     chunk_size: int = Field(default=500, ge=100, le=2000)
     chunk_overlap: int = Field(default=50, ge=0, le=200)
 

@@ -5,11 +5,12 @@
 支持语义搜索、实体消歧、关系去重等核心功能。
 
 可选模型（按需切换）:
-    - all-MiniLM-L6-v2         英文模型，22M 参数，384维，最快（默认）
-    - paraphrase-multilingual-MiniLM-L12-v2  多语言，118M 参数，384维，中文更好
+    - paraphrase-multilingual-MiniLM-L12-v2  多语言，118M 参数，384维，中文优秀（默认）
+    - all-MiniLM-L6-v2         英文模型，22M 参数，384维，最快（仅英文场景）
+    - BAAI/bge-small-zh-v1.5   中文专用，49M 参数，512维，中文最佳（需重建 embedding）
 
 通过环境变量切换:
-    GRAPHSCOPE_EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2
+    GRAPHSCOPE_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
 """
 
 import os
@@ -21,7 +22,7 @@ from graphiti_core.embedder.client import EmbedderClient
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "all-MiniLM-L6-v2"
+DEFAULT_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
 # 类级别模型缓存和锁，避免多个实例重复加载同一模型
 _model_cache: dict = {}
