@@ -15,7 +15,7 @@
     "graphscope:frontend": "cd graphscope/frontend && npm run dev",
     "graphscope:dev": "concurrently --kill-others -n \"graphscope-api,graphscope-ui\" -c \"magenta,blue\" \"npm run graphscope:backend\" \"npm run graphscope:frontend\"",
     "graphscope:build": "cd graphscope/frontend && npm run build",
-    "graphscope:docker": "cd graphscope && docker compose up --build"
+    "graphscope:docker": "cd graphscope && docker compose --env-file ../.env up --build"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
